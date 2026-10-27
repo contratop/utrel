@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.mjs",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "dependencies": {
     "dompurify": "^3.2.7",
