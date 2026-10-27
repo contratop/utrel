@@ -1,0 +1,22 @@
+services:
+  utrel:
+    build: .
+    image: utrel:latest
+    container_name: utrel
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATA_DIR: /data
+      # Estado inicial del registro de usuarios nuevos: el administrador
+      # puede abrirlo o cerrarlo después desde el panel de control
+      ALLOW_REGISTRATION: "true"
+      # Ponlo a "true" si publicas la app detrás de HTTPS
+      COOKIE_SECURE: "false"
+    volumes:
+      - utrel-data:/data
+
+volumes:
+  utrel-data:

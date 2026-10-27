@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 110" width="460" height="110">
+  <defs>
+    <linearGradient id="mark-grad-l" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4338ca" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="card-pill-l" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#818cf8" />
+    </linearGradient>
+    <filter id="mark-shadow-l" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#1e293b" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <!-- Group: Icon Mark -->
+  <g transform="translate(10, 10)">
+    <!-- Base Squircle -->
+    <rect width="90" height="90" rx="22" fill="url(#mark-grad-l)" filter="url(#mark-shadow-l)" />
+    <rect x="1" y="1" width="88" height="88" rx="21" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1.5" />
+
+    <!-- U-Kanban Pillars -->
+    <!-- U arc -->
+    <path d="M 28 44 C 28 66, 62 66, 62 44" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" />
+    <!-- Left column -->
+    <rect x="23" y="24" width="10" height="24" rx="5" fill="#ffffff" />
+    <!-- Right column -->
+    <rect x="57" y="30" width="10" height="18" rx="5" fill="#ffffff" />
+    <!-- Center floating card -->
+    <rect x="40" y="18" width="10" height="18" rx="4" fill="url(#card-pill-l)" stroke="#ffffff" stroke-width="1.5" />
+  </g>
+
+  <!-- Typography: UTREL (Deep Slate / Navy) -->
+  <g transform="translate(122, 65)">
+    <text
+      font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+      font-size="48"
+      font-weight="800"
+      letter-spacing="-0.03em"
+      fill="#0f172a"
+    >Utrel</text>
+  </g>
+
+  <!-- Subtitle Tagline Badge -->
+  <g transform="translate(124, 88)">
+    <text
+      font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+      font-size="11"
+      font-weight="600"
+      letter-spacing="0.18em"
+      fill="#2563eb"
+    >ULTRA-LIGHT KANBAN</text>
+  </g>
+</svg>

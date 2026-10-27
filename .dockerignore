@@ -1,0 +1,10 @@
+node_modules
+*/node_modules
+client/dist
+data
+.git
+.gitignore
+*.db
+*.db-wal
+*.db-shm
+npm-debug.log*
