@@ -30,7 +30,15 @@ async function mount(routes, path = '/', prepare) {
 
   globalThis.window = window
   globalThis.document = window.document
-  globalThis.navigator = window.navigator
+  try {
+    globalThis.navigator = window.navigator
+  } catch {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: window.navigator,
+      configurable: true,
+      writable: true,
+    })
+  }
   for (const key of Object.getOwnPropertyNames(window)) {
     if (!(key in globalThis)) {
       try {
