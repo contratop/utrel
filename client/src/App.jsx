@@ -4,6 +4,7 @@ import Login from './pages/Login.jsx'
 import Boards from './pages/Boards.jsx'
 import BoardPage from './pages/BoardPage.jsx'
 import Admin from './pages/Admin.jsx'
+import { APP_VERSION } from './lib/constants.js'
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth()
@@ -61,6 +62,9 @@ export default function App() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <span className="app-version" title="Versión de Utrel">
+          {`v${APP_VERSION}`}
+        </span>
       </AuthProvider>
     </BrowserRouter>
   )

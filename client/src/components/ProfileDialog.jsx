@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import Avatar from './Avatar.jsx'
+import Icon from './Icon.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function ProfileDialog({ onClose, onUpdated }) {
@@ -55,7 +56,7 @@ export default function ProfileDialog({ onClose, onUpdated }) {
           <h2>Mi perfil</h2>
           <div className="modal-head-actions">
             <button className="btn ghost small" type="button" onClick={onClose} title="Cerrar (Esc)">
-              ✕
+              <Icon name="x" size={15} />
             </button>
           </div>
         </div>
@@ -89,6 +90,7 @@ export default function ProfileDialog({ onClose, onUpdated }) {
           </p>
           <div className="row wrap">
             <label className={`btn small${busy ? ' disabled' : ''}`}>
+              <Icon name={busy ? 'loader' : 'upload'} size={14} className={busy ? 'spin' : ''} />
               {busy ? 'Guardando…' : 'Subir foto'}
               <input
                 type="file"

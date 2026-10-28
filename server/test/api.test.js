@@ -147,11 +147,13 @@ test('crear tarjeta y editar sus campos', async () => {
       dueDate,
       priority: 'high',
       coverColor: 'purple',
+      coverPosition: 'top',
     },
   })
   assert.equal(updated.status, 200)
   assert.equal(updated.data.card.priority, 'high')
   assert.equal(updated.data.card.coverColor, 'purple')
+  assert.equal(updated.data.card.coverPosition, 'top')
   assert.equal(updated.data.card.dueDate, dueDate)
   assert.ok(updated.data.card.description.includes('boceto'))
 
@@ -160,6 +162,12 @@ test('crear tarjeta y editar sus campos', async () => {
     body: { priority: 'urgentísima' },
   })
   assert.equal(invalid.status, 400)
+
+  const invalidPosition = await req('PATCH', `/api/cards/${state.cardId}`, {
+    cookie: state.cookieA,
+    body: { coverPosition: 'diagonal' },
+  })
+  assert.equal(invalidPosition.status, 400)
 })
 
 test('checklist con progreso en el payload del tablero', async () => {
@@ -193,6 +201,72 @@ test('checklist con progreso en el payload del tablero', async () => {
   const card = board.data.lists.flatMap((list) => list.cards).find((c) => c.id === state.cardId)
   assert.equal(card.checklist.total, 2)
   assert.equal(card.checklist.done, 1)
+})
+
+test('los checklists se reordenan y sus elementos se mueven entre ellos', async () => {
+  const extra = await req('POST', `/api/cards/${state.cardId}/checklists`, {
+    cookie: state.cookieA,
+    body: { title: 'Extras' },
+  })
+  const extraId = extra.data.card.checklists.at(-1).id
+
+  // El checklist nuevo pasa al principio de la tarjeta.
+  const reordered = await req('PATCH', `/api/checklists/${extraId}`, {
+    cookie: state.cookieA,
+    body: { targetIndex: 0 },
+  })
+  assert.deepEqual(
+    reordered.data.card.checklists.map((list) => list.title),
+    ['Extras', 'Criterios']
+  )
+
+  // Un elemento del primer checklist se mueve al otro, conservando su estado.
+  const moved = await req('PATCH', `/api/checklist-items/${state.itemId}`, {
+    cookie: state.cookieA,
+    body: { checklistId: extraId, targetIndex: 0 },
+  })
+  const extras = moved.data.card.checklists.find((list) => list.id === extraId)
+  const criterios = moved.data.card.checklists.find((list) => list.id === state.checklistId)
+  assert.deepEqual(
+    extras.items.map((item) => item.text),
+    ['Contraste accesible']
+  )
+  assert.equal(extras.items[0].done, true, 'el elemento conserva su estado al cambiar de checklist')
+  assert.deepEqual(
+    criterios.items.map((item) => item.text),
+    ['Responsive']
+  )
+
+  // Dentro del checklist de destino también se puede reordenar.
+  await req('POST', `/api/checklists/${extraId}/items`, {
+    cookie: state.cookieA,
+    body: { text: 'Al final' },
+  })
+  const reorderedItems = await req('PATCH', `/api/checklist-items/${state.itemId}`, {
+    cookie: state.cookieA,
+    body: { targetIndex: 1 },
+  })
+  assert.deepEqual(
+    reorderedItems.data.card.checklists.find((list) => list.id === extraId).items.map((item) => item.text),
+    ['Al final', 'Contraste accesible']
+  )
+
+  // Otra tarjeta del mismo tablero no es un destino válido.
+  const otherCard = await req('POST', `/api/lists/${state.listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Otra tarjeta' },
+  })
+  const foreign = await req('POST', `/api/cards/${otherCard.data.card.id}/checklists`, {
+    cookie: state.cookieA,
+    body: { title: 'Ajena' },
+  })
+  const rejected = await req('PATCH', `/api/checklist-items/${state.itemId}`, {
+    cookie: state.cookieA,
+    body: { checklistId: foreign.data.card.checklists[0].id, targetIndex: 0 },
+  })
+  assert.equal(rejected.status, 400)
+
+  await req('DELETE', `/api/cards/${otherCard.data.card.id}`, { cookie: state.cookieA })
 })
 
 test('etiquetas del tablero y asignación a la tarjeta', async () => {
@@ -428,6 +502,193 @@ test('permisos dentro del tablero: comentarios y asignados', async () => {
     cookie: state.cookieA,
   })
   assert.equal(notOwnerCannotRemove.status, 400)
+})
+
+test('las columnas del Kanban de tableros se guardan por usuario', async () => {
+  const initial = await req('GET', '/api/boards', { cookie: state.cookieA })
+  assert.equal(initial.data.lanes, null)
+
+  const saved = await req('PUT', '/api/boards/lanes', {
+    cookie: state.cookieA,
+    body: {
+      lanes: [
+        { id: 'focus', title: 'Foco', boardIds: [state.boardId] },
+        { id: 'later', title: 'Más adelante', boardIds: [] },
+      ],
+    },
+  })
+  assert.equal(saved.status, 200)
+  assert.deepEqual(
+    saved.data.lanes.map((lane) => lane.title),
+    ['Foco', 'Más adelante']
+  )
+  assert.deepEqual(saved.data.lanes[0].boardIds, [state.boardId])
+
+  const loaded = await req('GET', '/api/boards', { cookie: state.cookieA })
+  assert.deepEqual(
+    loaded.data.lanes.map((lane) => lane.title),
+    ['Foco', 'Más adelante']
+  )
+
+  // Cada usuario tiene sus propias columnas.
+  const other = await req('GET', '/api/boards', { cookie: state.cookieB })
+  assert.equal(other.data.lanes, null)
+
+  const empty = await req('PUT', '/api/boards/lanes', {
+    cookie: state.cookieA,
+    body: { lanes: [] },
+  })
+  assert.equal(empty.status, 400)
+
+  const invalidTitle = await req('PUT', '/api/boards/lanes', {
+    cookie: state.cookieA,
+    body: { lanes: [{ id: 'x', title: '  ', boardIds: [] }] },
+  })
+  assert.equal(invalidTitle.status, 400)
+
+  // Un tablero ajeno no se puede colocar en las columnas.
+  const filtered = await req('PUT', '/api/boards/lanes', {
+    cookie: state.cookieB,
+    body: { lanes: [{ id: 'mine', title: 'Mías', boardIds: [state.boardId] }] },
+  })
+  assert.equal(filtered.status, 200)
+  assert.deepEqual(filtered.data.lanes[0].boardIds, [state.boardId])
+
+  const outsider = await req('PUT', '/api/boards/lanes', {
+    cookie: state.cookieB,
+    body: { lanes: [{ id: 'mine', title: 'Mías', boardIds: ['00000000-0000-0000-0000-000000000000'] }] },
+  })
+  assert.deepEqual(outsider.data.lanes[0].boardIds, [])
+})
+
+test('el historial guarda miembros de tarjeta y cambios del tablero, con tope de 15', async () => {
+  const board = await req('POST', '/api/boards', {
+    cookie: state.cookieA,
+    body: { title: 'Historial' },
+  })
+  const boardId = board.data.board.id
+  const listId = board.data.lists[0].id
+  const card = await req('POST', `/api/lists/${listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Con historial' },
+  })
+  const cardId = card.data.card.id
+
+  await req('POST', `/api/cards/${cardId}/members`, {
+    cookie: state.cookieA,
+    body: { userId: state.userA.id },
+  })
+  const afterRemove = await req('DELETE', `/api/cards/${cardId}/members/${state.userA.id}`, {
+    cookie: state.cookieA,
+  })
+  const cardActivity = afterRemove.data.card.activity
+  assert.equal(cardActivity.length, 3)
+  assert.match(cardActivity[0].message, /quitó a @ana/)
+  assert.match(cardActivity[1].message, /asignó a @ana/)
+  assert.match(cardActivity[2].message, /creó la tarjeta/)
+  assert.equal(cardActivity[0].user.username, 'ana')
+
+  await req('PATCH', `/api/boards/${boardId}`, {
+    cookie: state.cookieA,
+    body: { title: 'Historial renombrado', background: 'forest' },
+  })
+  const boardWithHistory = await req('GET', `/api/boards/${boardId}`, { cookie: state.cookieA })
+  const messages = boardWithHistory.data.activity.map((entry) => entry.message)
+  assert.ok(messages.some((message) => /creó el tablero/.test(message)))
+  assert.ok(messages.some((message) => /renombró el tablero/.test(message)))
+  assert.ok(messages.some((message) => /cambió el fondo/.test(message)))
+  assert.ok(!messages.some((message) => /@ana/.test(message)), 'las tarjetas no ensucian el historial del tablero')
+
+  for (let index = 0; index < 20; index += 1) {
+    await req('PATCH', `/api/boards/${boardId}`, {
+      cookie: state.cookieA,
+      body: { title: `Historial ${index}` },
+    })
+  }
+  const limited = await req('GET', `/api/boards/${boardId}`, { cookie: state.cookieA })
+  assert.equal(limited.data.activity.length, 15, 'solo se conservan las 15 últimas del tablero')
+
+  const cardAgain = await req('GET', `/api/cards/${cardId}`, { cookie: state.cookieA })
+  assert.equal(cardAgain.data.card.activity.length, 3, 'el tope del tablero no toca el de la tarjeta')
+
+  await req('DELETE', `/api/boards/${boardId}`, { cookie: state.cookieA })
+})
+
+test('la actividad registra modificaciones de la tarjeta y borrados del tablero', async () => {
+  const board = await req('POST', '/api/boards', {
+    cookie: state.cookieA,
+    body: { title: 'Actividad completa' },
+  })
+  const boardId = board.data.board.id
+  const listId = board.data.lists[0].id
+  const card = await req('POST', `/api/lists/${listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Con cambios' },
+  })
+  const cardId = card.data.card.id
+
+  const withLabel = await req('POST', `/api/boards/${boardId}/labels`, {
+    cookie: state.cookieA,
+    body: { name: 'Bug', color: 'red' },
+  })
+  const labelId = withLabel.data.labels.find((label) => label.name === 'Bug').id
+  await req('POST', `/api/cards/${cardId}/labels`, {
+    cookie: state.cookieA,
+    body: { labelId },
+  })
+
+  const withChecklist = await req('POST', `/api/cards/${cardId}/checklists`, {
+    cookie: state.cookieA,
+    body: { title: 'Criterios' },
+  })
+  const checklistId = withChecklist.data.card.checklists[0].id
+  const withItem = await req('POST', `/api/checklists/${checklistId}/items`, {
+    cookie: state.cookieA,
+    body: { text: 'Probar el flujo' },
+  })
+  const itemId = withItem.data.card.checklists[0].items[0].id
+  await req('PATCH', `/api/checklist-items/${itemId}`, {
+    cookie: state.cookieA,
+    body: { done: true },
+  })
+  await req('POST', `/api/cards/${cardId}/comments`, {
+    cookie: state.cookieA,
+    body: { body: 'Queda listo' },
+  })
+  await req('DELETE', `/api/checklists/${checklistId}`, { cookie: state.cookieA })
+
+  const detail = await req('GET', `/api/cards/${cardId}`, { cookie: state.cookieA })
+  const cardMessages = detail.data.card.activity.map((entry) => entry.message)
+  assert.ok(cardMessages.some((message) => /etiqueta «Bug»/.test(message)))
+  assert.ok(cardMessages.some((message) => /checklist «Criterios»/.test(message)))
+  assert.ok(cardMessages.some((message) => /añadió un elemento/.test(message)))
+  assert.ok(cardMessages.some((message) => /completó un elemento/.test(message)))
+  assert.ok(cardMessages.some((message) => /comentó en la tarjeta/.test(message)))
+  assert.ok(cardMessages.some((message) => /eliminó el checklist/.test(message)))
+
+  await req('DELETE', `/api/cards/${cardId}`, { cookie: state.cookieA })
+  const afterDelete = await req('GET', `/api/boards/${boardId}`, { cookie: state.cookieA })
+  const boardMessages = afterDelete.data.activity.map((entry) => entry.message)
+  assert.ok(boardMessages.some((message) => /eliminó la tarjeta «Con cambios»/.test(message)))
+
+  const extraList = await req('POST', `/api/boards/${boardId}/lists`, {
+    cookie: state.cookieA,
+    body: { title: 'Temporal' },
+  })
+  const extraListId = extraList.data.lists.find((list) => list.title === 'Temporal').id
+  await req('POST', `/api/lists/${extraListId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Se va con la lista' },
+  })
+  await req('DELETE', `/api/lists/${extraListId}`, { cookie: state.cookieA })
+  const afterListDelete = await req('GET', `/api/boards/${boardId}`, { cookie: state.cookieA })
+  const listMessages = afterListDelete.data.activity.map((entry) => entry.message)
+  assert.ok(listMessages.some((message) => /creó la lista «Temporal»/.test(message)))
+  assert.ok(
+    listMessages.some((message) => /eliminó la lista «Temporal» y sus 1 tarjeta/.test(message))
+  )
+
+  await req('DELETE', `/api/boards/${boardId}`, { cookie: state.cookieA })
 })
 
 test('el propietario puede quitar miembros y borrar el tablero', async () => {

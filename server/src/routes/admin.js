@@ -164,6 +164,7 @@ export function adminRoutes(db) {
 
     const ownedBoards = count(db, 'SELECT COUNT(*) AS total FROM boards WHERE owner_id = ?', target.id)
     db.prepare('DELETE FROM users WHERE id = ?').run(target.id)
+    db.prepare('DELETE FROM settings WHERE key = ?').run(`board-lanes:${target.id}`)
     res.json({ ok: true, deleted: { id: target.id, boards: ownedBoards } })
   })
 

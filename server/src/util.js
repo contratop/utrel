@@ -34,6 +34,17 @@ export const LABEL_COLORS = [
   'gray',
 ]
 export const BOARD_BACKGROUNDS = ['aurora', 'ocean', 'sunset', 'forest', 'berry', 'graphite']
+export const COVER_POSITIONS = [
+  'center',
+  'top',
+  'bottom',
+  'left',
+  'right',
+  'top-left',
+  'top-right',
+  'bottom-left',
+  'bottom-right',
+]
 
 export function str(value, field, { required = false, max = 500 } = {}) {
   if (value === undefined || value === null) {
@@ -183,6 +194,22 @@ export function reorderList(db, listId, targetIndex) {
   run()
 }
 
+/** Reordena un checklist dentro de su tarjeta. */
+export function reorderChecklist(db, checklistId, targetIndex) {
+  const row = db.prepare('SELECT card_id FROM checklists WHERE id = ?').get(checklistId)
+  if (!row) notFound('Checklist no encontrado')
+  const siblings = db
+    .prepare('SELECT id FROM checklists WHERE card_id = ? AND id <> ? ORDER BY position ASC, rowid ASC')
+    .all(row.card_id, checklistId)
+  const index = Math.max(0, Math.min(Number(targetIndex) || 0, siblings.length))
+  const ordered = [...siblings.slice(0, index).map((r) => r.id), checklistId, ...siblings.slice(index).map((r) => r.id)]
+  const update = db.prepare('UPDATE checklists SET position = ? WHERE id = ?')
+  const run = db.transaction(() => {
+    ordered.forEach((id, i) => update.run((i + 1) * 1000, id))
+  })
+  run()
+}
+
 /** Reordena un elemento de checklist dentro de su checklist. */
 export function reorderItem(db, itemId, targetIndex) {
   const row = db.prepare('SELECT checklist_id FROM checklist_items WHERE id = ?').get(itemId)
@@ -197,4 +224,36 @@ export function reorderItem(db, itemId, targetIndex) {
     ordered.forEach((id, i) => update.run((i + 1) * 1000, id))
   })
   run()
+}
+
+/**
+ * Registra una entrada en el historial y conserva solo las últimas 15 de su
+ * ámbito (la tarjeta o el tablero). El texto se guarda ya redactado.
+ */
+export function logActivity(db, { boardId, cardId = null, userId = null, kind, message, limit = 15 }) {
+  db.prepare(
+    'INSERT INTO activity (id, board_id, card_id, user_id, kind, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(uid(), boardId, cardId, userId, kind, message, iso())
+
+  const scope = cardId ? 'card_id = ?' : 'board_id = ? AND card_id IS NULL'
+  const value = cardId || boardId
+  db.prepare(
+    `DELETE FROM activity WHERE ${scope} AND id NOT IN (
+       SELECT id FROM activity WHERE ${scope}
+        ORDER BY created_at DESC, rowid DESC LIMIT ?
+     )`
+  ).run(value, value, limit)
+}
+
+/**
+ * Mueve un elemento a otra checklist de la misma tarjeta. Sin índice se coloca
+ * al final; con índice, entre los elementos que ya tenía esa checklist.
+ */
+export function moveItem(db, itemId, checklistId, targetIndex) {
+  const siblings = db
+    .prepare('SELECT id FROM checklist_items WHERE checklist_id = ? AND id <> ? ORDER BY position ASC, rowid ASC')
+    .all(checklistId, itemId)
+  const index = targetIndex === undefined ? siblings.length : Number(targetIndex) || 0
+  db.prepare('UPDATE checklist_items SET checklist_id = ? WHERE id = ?').run(checklistId, itemId)
+  reorderItem(db, itemId, index)
 }

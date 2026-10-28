@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../api.js'
 import Avatar from './Avatar.jsx'
+import Icon from './Icon.jsx'
 
 export default function MembersDialog({ board, currentUser, onClose, onBoardChange }) {
   const [query, setQuery] = useState('')
@@ -53,8 +54,8 @@ export default function MembersDialog({ board, currentUser, onClose, onBoardChan
       <div className="modal narrow" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <h2>Miembros del tablero</h2>
-          <button className="btn ghost small" type="button" onClick={onClose}>
-            ✕
+          <button className="btn ghost small" type="button" onClick={onClose} title="Cerrar" aria-label="Cerrar">
+            <Icon name="x" size={15} />
           </button>
         </div>
 

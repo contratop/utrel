@@ -67,9 +67,10 @@ CREATE TABLE IF NOT EXISTS cards (
   due_date     TEXT,
   due_complete INTEGER NOT NULL DEFAULT 0,
   priority     TEXT NOT NULL DEFAULT 'none',
-  cover_color  TEXT,
-  cover_image  TEXT,
-  position     REAL NOT NULL DEFAULT 1000,
+  cover_color    TEXT,
+  cover_image    TEXT,
+  cover_position TEXT NOT NULL DEFAULT 'center',
+  position       REAL NOT NULL DEFAULT 1000,
   archived     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
@@ -124,6 +125,18 @@ CREATE TABLE IF NOT EXISTS comments (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_comments_card ON comments(card_id);
+
+CREATE TABLE IF NOT EXISTS activity (
+  id         TEXT PRIMARY KEY,
+  board_id   TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  card_id    TEXT REFERENCES cards(id) ON DELETE CASCADE,
+  user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
+  kind       TEXT NOT NULL,
+  message    TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_activity_board ON activity(board_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_card ON activity(card_id, created_at);
 `
 
 /** Añade columnas nuevas a bases de datos ya existentes (imágenes personalizadas). */
@@ -142,6 +155,7 @@ function migrate(db) {
 
   add('boards', 'background_image', 'TEXT')
   add('cards', 'cover_image', 'TEXT')
+  add('cards', 'cover_position', "TEXT NOT NULL DEFAULT 'center'")
   add('lists', 'color', 'TEXT')
   add('lists', 'card_limit', 'INTEGER')
   add('users', 'avatar', 'TEXT')

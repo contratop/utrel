@@ -8,6 +8,7 @@ import {
   bool,
   imageRef,
   iso,
+  logActivity,
   maxPosition,
   notFound,
   reorderList,
@@ -25,6 +26,34 @@ const DEFAULT_LABELS = [
   { name: 'Idea', color: 'blue' },
   { name: 'Investigación', color: 'purple' },
 ]
+
+const MAX_LANES = 8
+const lanesKey = (userId) => `board-lanes:${userId}`
+
+/** Columnas del Kanban de tableros, guardadas por usuario. */
+function readLanes(db, userId) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(lanesKey(userId))
+  if (!row) return null
+  try {
+    const parsed = JSON.parse(row.value)
+    if (!Array.isArray(parsed)) return null
+    return parsed
+      .filter(
+        (lane) =>
+          lane &&
+          typeof lane.id === 'string' &&
+          typeof lane.title === 'string' &&
+          Array.isArray(lane.boardIds)
+      )
+      .map((lane) => ({
+        id: lane.id,
+        title: lane.title,
+        boardIds: lane.boardIds.filter((id) => typeof id === 'string'),
+      }))
+  } catch {
+    return null
+  }
+}
 
 export function boardRoutes(db) {
   const router = Router()
@@ -57,7 +86,52 @@ export function boardRoutes(db) {
         ...board,
         members: members.filter((m) => m.boardId === board.id).map(({ boardId, ...rest }) => rest),
       })),
+      lanes: readLanes(db, req.user.id),
     })
+  })
+
+  // ------------------------------------------------------------------ kanban
+
+  router.put('/boards/lanes', (req, res) => {
+    const body = req.body || {}
+    if (!Array.isArray(body.lanes)) throw new HttpError(400, 'Las columnas deben ser una lista')
+    if (body.lanes.length < 1) throw new HttpError(400, 'Necesitas al menos una columna')
+    if (body.lanes.length > MAX_LANES) {
+      throw new HttpError(400, `No puedes tener más de ${MAX_LANES} columnas`)
+    }
+
+    const accessible = new Set(
+      db
+        .prepare('SELECT board_id FROM board_members WHERE user_id = ?')
+        .all(req.user.id)
+        .map((row) => row.board_id)
+    )
+    const ids = new Set()
+    const assigned = new Set()
+    const lanes = body.lanes.map((lane, index) => {
+      if (!lane || typeof lane !== 'object') {
+        throw new HttpError(400, `La columna ${index + 1} no es válida`)
+      }
+      const title = str(lane.title, 'título de columna', { required: true, max: 40 })
+      let id = typeof lane.id === 'string' ? lane.id.trim().slice(0, 64) : ''
+      if (!id || ids.has(id)) id = uid()
+      ids.add(id)
+
+      const boardIds = []
+      for (const boardId of Array.isArray(lane.boardIds) ? lane.boardIds : []) {
+        if (typeof boardId !== 'string' || !accessible.has(boardId) || assigned.has(boardId)) continue
+        assigned.add(boardId)
+        boardIds.push(boardId)
+      }
+      return { id, title, boardIds }
+    })
+
+    db.prepare(
+      `INSERT INTO settings (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).run(lanesKey(req.user.id), JSON.stringify(lanes))
+
+    res.json({ lanes })
   })
 
   router.post('/boards', (req, res) => {
@@ -88,6 +162,12 @@ export function boardRoutes(db) {
       for (const label of DEFAULT_LABELS) insertLabel.run(uid(), id, label.name, label.color)
     })
     create()
+    logActivity(db, {
+      boardId: id,
+      userId: req.user.id,
+      kind: 'board',
+      message: 'creó el tablero',
+    })
 
     res.status(201).json(boardPayload(db, id))
   })
@@ -104,6 +184,9 @@ export function boardRoutes(db) {
     const archived = bool(body.archived, 'archived')
     const background = body.background
     const backgroundImage = imageRef(body.backgroundImage, 'imagen de fondo')
+    const before = db
+      .prepare('SELECT title, background, background_image FROM boards WHERE id = ?')
+      .get(req.params.id)
 
     if (background !== undefined && !BOARD_BACKGROUNDS.includes(background)) {
       throw new HttpError(400, 'Fondo de tablero no válido')
@@ -126,6 +209,31 @@ export function boardRoutes(db) {
       archived ?? null,
       req.params.id
     )
+
+    if (title !== undefined && title !== before.title) {
+      logActivity(db, {
+        boardId: req.params.id,
+        userId: req.user.id,
+        kind: 'board',
+        message: `renombró el tablero a «${title}»`,
+      })
+    }
+    if (background !== undefined && background !== before.background) {
+      logActivity(db, {
+        boardId: req.params.id,
+        userId: req.user.id,
+        kind: 'board',
+        message: 'cambió el fondo del tablero',
+      })
+    }
+    if (backgroundImage !== undefined && backgroundImage !== before.background_image) {
+      logActivity(db, {
+        boardId: req.params.id,
+        userId: req.user.id,
+        kind: 'board',
+        message: 'cambió la imagen de fondo del tablero',
+      })
+    }
 
     res.json(boardPayload(db, req.params.id))
   })
@@ -160,6 +268,12 @@ export function boardRoutes(db) {
       user.id,
       'member'
     )
+    logActivity(db, {
+      boardId: req.params.id,
+      userId: req.user.id,
+      kind: 'board',
+      message: `añadió a @${user.username} al tablero`,
+    })
     res.status(201).json({ members: memberList(db, req.params.id) })
   })
 
@@ -178,6 +292,13 @@ export function boardRoutes(db) {
     db.prepare(
       'DELETE FROM card_members WHERE user_id = ? AND card_id IN (SELECT id FROM cards WHERE board_id = ?)'
     ).run(req.params.userId, req.params.id)
+    const targetUser = db.prepare('SELECT username FROM users WHERE id = ?').get(req.params.userId)
+    logActivity(db, {
+      boardId: req.params.id,
+      userId: req.user.id,
+      kind: 'board',
+      message: `quitó a @${targetUser ? targetUser.username : 'un miembro'} del tablero`,
+    })
     res.json({ members: memberList(db, req.params.id) })
   })
 
@@ -195,6 +316,12 @@ export function boardRoutes(db) {
       name,
       color
     )
+    logActivity(db, {
+      boardId: req.params.id,
+      userId: req.user.id,
+      kind: 'board',
+      message: `creó la etiqueta «${name || color}»`,
+    })
     res.status(201).json(boardPayload(db, req.params.id))
   })
 
@@ -207,18 +334,34 @@ export function boardRoutes(db) {
     if (color !== undefined && !LABEL_COLORS.includes(color)) {
       throw new HttpError(400, 'Color de etiqueta no válido')
     }
+    const before = db.prepare('SELECT name, color FROM labels WHERE id = ?').get(req.params.id)
     db.prepare('UPDATE labels SET name = COALESCE(?, name), color = COALESCE(?, color) WHERE id = ?').run(
       name ?? null,
       color ?? null,
       req.params.id
     )
+    if ((name !== undefined && name !== before.name) || (color !== undefined && color !== before.color)) {
+      logActivity(db, {
+        boardId,
+        userId: req.user.id,
+        kind: 'board',
+        message: `editó la etiqueta «${(name ?? before.name) || (color ?? before.color)}»`,
+      })
+    }
     res.json(boardPayload(db, boardId))
   })
 
   router.delete('/labels/:id', (req, res) => {
     const boardId = boardIdOfLabel(db, req.params.id)
     requireBoard(db, req.user.id, boardId)
+    const label = db.prepare('SELECT name, color FROM labels WHERE id = ?').get(req.params.id)
     db.prepare('DELETE FROM labels WHERE id = ?').run(req.params.id)
+    logActivity(db, {
+      boardId,
+      userId: req.user.id,
+      kind: 'board',
+      message: `eliminó la etiqueta «${label.name || label.color}»`,
+    })
     res.json(boardPayload(db, boardId))
   })
 
@@ -239,13 +382,21 @@ export function boardRoutes(db) {
       position,
       iso()
     )
+    logActivity(db, {
+      boardId: req.params.id,
+      userId: req.user.id,
+      kind: 'board',
+      message: `creó la lista «${title}»`,
+    })
     res.status(201).json(boardPayload(db, req.params.id))
   })
 
   router.patch('/lists/:id', (req, res) => {
-    const boardId = db.prepare('SELECT board_id FROM lists WHERE id = ?').get(req.params.id)
-    if (!boardId) notFound('Lista no encontrada')
-    requireBoard(db, req.user.id, boardId.board_id)
+    const list = db
+      .prepare('SELECT board_id, title, archived FROM lists WHERE id = ?')
+      .get(req.params.id)
+    if (!list) notFound('Lista no encontrada')
+    requireBoard(db, req.user.id, list.board_id)
     const body = req.body || {}
     const title = str(body.title, 'título', { max: 120 })
     const archived = bool(body.archived, 'archived')
@@ -287,14 +438,44 @@ export function boardRoutes(db) {
     )
     if (body.targetIndex !== undefined) reorderList(db, req.params.id, body.targetIndex)
 
-    res.json(boardPayload(db, boardId.board_id))
+    if (title !== undefined && title !== list.title) {
+      logActivity(db, {
+        boardId: list.board_id,
+        userId: req.user.id,
+        kind: 'board',
+        message: `renombró la lista «${list.title}» a «${title}»`,
+      })
+    }
+    if (archived !== undefined && archived !== list.archived) {
+      logActivity(db, {
+        boardId: list.board_id,
+        userId: req.user.id,
+        kind: 'board',
+        message: `${archived ? 'archivó' : 'restauró'} la lista «${title || list.title}»`,
+      })
+    }
+
+    res.json(boardPayload(db, list.board_id))
   })
 
   router.delete('/lists/:id', (req, res) => {
-    const row = db.prepare('SELECT board_id FROM lists WHERE id = ?').get(req.params.id)
+    const row = db
+      .prepare(
+        `SELECT l.board_id, l.title, (SELECT COUNT(*) FROM cards c WHERE c.list_id = l.id) AS cards
+           FROM lists l WHERE l.id = ?`
+      )
+      .get(req.params.id)
     if (!row) notFound('Lista no encontrada')
     requireBoard(db, req.user.id, row.board_id)
     db.prepare('DELETE FROM lists WHERE id = ?').run(req.params.id)
+    logActivity(db, {
+      boardId: row.board_id,
+      userId: req.user.id,
+      kind: 'board',
+      message: row.cards > 0
+        ? `eliminó la lista «${row.title}» y sus ${row.cards} tarjeta${row.cards === 1 ? '' : 's'}`
+        : `eliminó la lista «${row.title}»`,
+    })
     res.json(boardPayload(db, row.board_id))
   })
 

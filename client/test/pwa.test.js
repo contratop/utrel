@@ -84,3 +84,51 @@ test('el service worker sirve el armazón y nunca la API', { skip }, () => {
   assert.match(sw, /url\.pathname\.startsWith\('\/uploads\/'\)/)
   assert.match(sw, /request\.mode === 'navigate'/, 'la navegación va a la red con respaldo local')
 })
+
+/** CSS compilado que sirve la app (un solo archivo en dist/assets). */
+function buildCss() {
+  const assetsDir = path.join(dist, 'assets')
+  const file = fs.readdirSync(assetsDir).find((name) => name.endsWith('.css'))
+  assert.ok(file, 'falta el CSS compilado')
+  return fs.readFileSync(path.join(assetsDir, file), 'utf8')
+}
+
+test('el CSS respeta el área segura del iPad cuando la app va instalada', { skip }, () => {
+  const css = buildCss()
+
+  assert.match(css, /env\(safe-area-inset-top/, 'deja libre la barra de estado (batería y hora)')
+  assert.match(css, /env\(safe-area-inset-bottom/, 'y el indicador de inicio, sin franjas sin pintar')
+  assert.match(
+    css,
+    /-webkit-fill-available/,
+    'la ventana instalada es más alta que 100vh: hay que cubrirla entera'
+  )
+  assert.match(css, /--app-height/, 'las columnas se miden con el alto real de la ventana')
+  assert.match(css, /100dvh/, 'con dvh como medida preferente')
+  assert.match(css, /background-color:var\(--bg\)/, 'el lienzo del documento va pintado, nunca negro')
+})
+
+test('el CSS resuelve el texto largo y la vista previa del markdown', { skip }, () => {
+  const css = buildCss()
+
+  assert.match(
+    css,
+    /\.checklist-item-text\{[^}]*white-space:pre-wrap/,
+    'el texto de un elemento de checklist envuelve y se ve entero'
+  )
+  assert.match(
+    css,
+    /\.markdown input\[type=['"]?checkbox['"]?\]/,
+    'las casillas de las listas de tareas no heredan el estilo de los campos'
+  )
+  assert.match(css, /\.markdown table/, 'las tablas del markdown tienen estilo propio')
+
+  // La búsqueda abre un modal casi a pantalla completa con sus resultados.
+  assert.match(css, /\.search-modal\{[^}]*height:min\(86vh/, 'el buscador ocupa casi toda la pantalla')
+  assert.match(css, /\.search-results\{[^}]*grid-template-columns:repeat\(auto-fill/, 'los resultados van en cuadrícula')
+
+  // El selector de color: pastillas redondas, con anillo en la elegida.
+  assert.match(css, /\.color-select-trigger\{/, 'el selector de color discreto')
+  assert.match(css, /\.color-select-menu\{/)
+  assert.doesNotMatch(css, /\.color-grid\{/, 'sin cuadrículas de colores a la vista')
+})

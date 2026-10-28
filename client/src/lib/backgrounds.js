@@ -36,12 +36,37 @@ export function boardTileArtwork(board) {
   return { className: `bg-${board.background || 'aurora'}`, style: undefined }
 }
 
+/** Posiciones de encuadre que puede elegir el usuario para la portada. */
+export const COVER_POSITION_OPTIONS = [
+  { value: 'top-left', label: 'Arriba izquierda' },
+  { value: 'top', label: 'Arriba' },
+  { value: 'top-right', label: 'Arriba derecha' },
+  { value: 'left', label: 'Izquierda' },
+  { value: 'center', label: 'Centro' },
+  { value: 'right', label: 'Derecha' },
+  { value: 'bottom-left', label: 'Abajo izquierda' },
+  { value: 'bottom', label: 'Abajo' },
+  { value: 'bottom-right', label: 'Abajo derecha' },
+]
+
+const COVER_POSITION_CSS = {
+  center: 'center',
+  top: '50% 0%',
+  bottom: '50% 100%',
+  left: '0% 50%',
+  right: '100% 50%',
+  'top-left': '0% 0%',
+  'top-right': '100% 0%',
+  'bottom-left': '0% 100%',
+  'bottom-right': '100% 100%',
+}
+
 /** Estilo de la portada de una tarjeta cuando es una imagen; null si es color o no tiene. */
 export function coverImageStyle(card) {
   if (!isCustomImage(card?.coverImage)) return null
   return {
     backgroundImage: cssUrl(card.coverImage),
     backgroundSize: 'cover',
-    backgroundPosition: 'center',
+    backgroundPosition: COVER_POSITION_CSS[card?.coverPosition] || 'center',
   }
 }

@@ -6,16 +6,21 @@ import Avatar from '../components/Avatar.jsx'
 import CardItem from '../components/CardItem.jsx'
 import CardDetail from '../components/CardDetail.jsx'
 import ContextMenu from '../components/ContextMenu.jsx'
+import Icon from '../components/Icon.jsx'
 import CalendarView from '../components/CalendarView.jsx'
-import FilterBar, { matchesFilters } from '../components/FilterBar.jsx'
+import BoardActivityDialog from '../components/BoardActivityDialog.jsx'
+import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import LabelsDialog from '../components/LabelsDialog.jsx'
+import SearchDialog from '../components/SearchDialog.jsx'
+import ColorSelect from '../components/ColorSelect.jsx'
 import MembersDialog from '../components/MembersDialog.jsx'
 import ArchivedDialog from '../components/ArchivedDialog.jsx'
 import BoardBackgroundDialog from '../components/BoardBackgroundDialog.jsx'
 import ProfileDialog from '../components/ProfileDialog.jsx'
 import { boardArtwork } from '../lib/backgrounds.js'
-import { LABEL_COLORS, LABEL_COLOR_HEX, LABEL_COLOR_NAMES } from '../lib/constants.js'
+import { LABEL_COLOR_HEX } from '../lib/constants.js'
 import { listLimitStatus, listLimitTitle } from '../lib/listLimit.js'
+import { useDismissOnOutside } from '../lib/editing.js'
 import { clientId } from '../lib/clientId.js'
 import { useBoardLive } from '../lib/live.js'
 import {
@@ -49,22 +54,26 @@ export default function BoardPage() {
   const [view, setView] = useState('board')
   const [filters, setFilters] = useState(EMPTY_FILTERS)
   const [dialog, setDialog] = useState(null)
+  const [confirmState, setConfirmState] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [listMenu, setListMenu] = useState(null)
   const [limitDraft, setLimitDraft] = useState('')
 
   const [searchOpen, setSearchOpen] = useState(false)
-  const searchRef = useRef(null)
+  const menuWrapRef = useRef(null)
   const [contextMenu, setContextMenu] = useState(null)
 
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
+  const titleRef = useRef(null)
   const [addingList, setAddingList] = useState(false)
   const [newListTitle, setNewListTitle] = useState('')
   const [renamingList, setRenamingList] = useState(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const renameCancelRef = useRef(false)
   const [cardComposer, setCardComposer] = useState(null)
   const [cardDraft, setCardDraft] = useState('')
+  const pendingCardScrollRef = useRef(null)
 
   const collapsedKey = `utrel:collapsed:${user.id}:${boardId}`
   const [collapsedLists, setCollapsedLists] = useState(() => readCollapsedLists(collapsedKey))
@@ -144,6 +153,104 @@ export default function BoardPage() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [refresh])
 
+  /** Marca (o desmarca) la fecha de vencimiento de una tarjeta. */
+  const toggleDueComplete = (cardId, dueComplete) =>
+    guarded(() => api.patch(`/cards/${cardId}`, { dueComplete }))
+
+  /**
+   * Cambia el día de vencimiento al soltar una tarjeta en el calendario. Se
+   * conserva la hora que ya tenía; si no tenía fecha, se asigna mediodía.
+   */
+  const moveCardDue = (cardId, key) => {
+    const card = calendarCards.find((item) => item.id === cardId)
+    if (!card) return
+    const [year, month, day] = key.split('-').map(Number)
+    if (!year || !month || !day) return
+    const next = card.dueDate ? new Date(card.dueDate) : new Date()
+    if (Number.isNaN(next.getTime())) return
+    next.setFullYear(year, month - 1, day)
+    next.setHours(card.dueDate ? next.getHours() : 12, card.dueDate ? next.getMinutes() : 0, 0, 0)
+    guarded(() => api.patch(`/cards/${cardId}`, { dueDate: next.toISOString() }))
+  }
+
+  // Al crear una tarjeta, la lista se desplaza hasta el final para que la nueva
+  // quede a la vista por encima del botón de añadir, nunca debajo de las demás.
+  useEffect(() => {
+    const listId = pendingCardScrollRef.current
+    if (!listId || !data) return
+    const container = document.querySelector(`[data-list-cards="${listId}"]`)
+    if (!container) return
+    pendingCardScrollRef.current = null
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+    } else {
+      container.scrollTop = container.scrollHeight
+    }
+  }, [data])
+
+  // Al pulsar fuera, el compositor de tarjetas se cierra: si ya creaste la
+  // tarjeta no hace falta darle a «Cancelar» para que no quede abierto.
+  useEffect(() => {
+    if (!cardComposer) return undefined
+    const onOutside = (event) => {
+      if (event.target.closest?.('[data-list-composer]')) return
+      setCardComposer(null)
+    }
+    document.addEventListener('mousedown', onOutside)
+    document.addEventListener('touchstart', onOutside)
+    return () => {
+      document.removeEventListener('mousedown', onOutside)
+      document.removeEventListener('touchstart', onOutside)
+    }
+  }, [cardComposer])
+
+  // La edición en línea se guarda por defecto al salir del campo, pero solo
+  // cuando la pulsación termina fuera: seleccionar texto y soltar el ratón
+  // fuera (o un clic accidental) no cierra lo que estás escribiendo.
+  useDismissOnOutside({
+    active: editingTitle,
+    contains: (node) => Boolean(titleRef.current && titleRef.current.contains(node)),
+    onDismiss: () => {
+      const title = titleDraft.replace(/\s+/g, ' ').trim().slice(0, 100)
+      setEditingTitle(false)
+      if (title && data.board.title !== title) guarded(() => api.patch(`/boards/${boardId}`, { title }))
+    },
+  })
+
+  // El menú de la barra superior y el de cada lista se cierran al pulsar fuera,
+  // como cualquier desplegable.
+  useDismissOnOutside({
+    active: menuOpen,
+    contains: (node) => Boolean(menuWrapRef.current && menuWrapRef.current.contains(node)),
+    onDismiss: () => setMenuOpen(false),
+  })
+
+  useDismissOnOutside({
+    active: listMenu !== null,
+    contains: (node) => {
+      const wrap = typeof node?.closest === 'function' ? node.closest('[data-menu-wrap]') : null
+      return Boolean(wrap) && wrap.getAttribute('data-menu-wrap') === listMenu
+    },
+    onDismiss: () => setListMenu(null),
+  })
+
+  // Escape cierra los desplegables abiertos, como cualquier menú.
+  useEffect(() => {
+    if (!menuOpen && listMenu === null) return undefined
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return
+      setMenuOpen(false)
+      setListMenu(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen, listMenu])
+
+  /** Confirmación interna para las acciones destructivas (nada de window.confirm). */
+  function askConfirm({ title, message, confirmLabel = 'Eliminar', onConfirm }) {
+    setConfirmState({ title, message, confirmLabel, onConfirm })
+  }
+
   // ----------------------------------------------------- menú contextual
 
   /** Abre el menú propio en lugar del del navegador (clic derecho). */
@@ -156,55 +263,59 @@ export default function BoardPage() {
   }
 
   const boardMenuItems = () => [
-    { label: 'Buscar en el tablero…', icon: '🔍', onSelect: () => setSearchOpen(true) },
-    { label: 'Fondo del tablero…', icon: '🖼️', onSelect: () => setDialog('background') },
-    { label: 'Etiquetas…', icon: '🏷️', onSelect: () => setDialog('labels') },
-    { label: 'Miembros…', icon: '👥', onSelect: () => setDialog('members') },
+    { label: 'Buscar en el tablero…', icon: <Icon name="search" />, onSelect: () => setSearchOpen(true) },
+    { label: 'Fondo del tablero…', icon: <Icon name="image" />, onSelect: () => setDialog('background') },
+    { label: 'Etiquetas…', icon: <Icon name="tag" />, onSelect: () => setDialog('labels') },
+    { label: 'Miembros…', icon: <Icon name="users" />, onSelect: () => setDialog('members') },
     { separator: true },
     {
       label: `Elementos archivados (${data.archivedCards.length + data.archivedLists.length})`,
-      icon: '📦',
+      icon: <Icon name="archive" />,
       onSelect: () => setDialog('archived'),
     },
-    { separator: true },
     {
-      label: 'Archivar tablero',
-      onSelect: () => guarded(() => api.patch(`/boards/${boardId}`, { archived: true })).then(() => navigate('/')),
+      label: 'Actividad del tablero…',
+      icon: <Icon name="history" />,
+      onSelect: () => setDialog('activity'),
     },
+    { separator: true },
     ...(data.board.ownerId === user.id
       ? [
           {
             label: 'Eliminar tablero',
-            icon: '🗑️',
+            icon: <Icon name="trash" />,
             danger: true,
-            onSelect: async () => {
-              if (!window.confirm(`¿Eliminar el tablero «${data.board.title}» y todas sus tarjetas?`)) return
-              await guarded(() => api.del(`/boards/${boardId}`))
-              navigate('/')
-            },
+            onSelect: () =>
+              askConfirm({
+                title: 'Eliminar tablero',
+                message: `¿Eliminar el tablero «${data.board.title}» y todas sus tarjetas?`,
+                confirmLabel: 'Eliminar tablero',
+                onConfirm: async () => {
+                  await guarded(() => api.del(`/boards/${boardId}`))
+                  navigate('/')
+                },
+              }),
           },
         ]
       : []),
   ]
 
   const listMenuItems = (list) => [
-    { label: 'Añadir tarjeta', icon: '＋', onSelect: () => setCardComposer(list.id) },
+    { label: 'Añadir tarjeta', icon: <Icon name="plus" />, onSelect: () => setCardComposer(list.id) },
     {
       label: 'Renombrar lista',
-      icon: '✏️',
-      onSelect: () => {
-        setRenamingList(list.id)
-        setRenameDraft(list.title)
-      },
+      icon: <Icon name="pencil" />,
+      onSelect: () => startRenameList(list),
     },
     {
       label: collapsedLists.has(list.id) ? 'Expandir lista' : 'Contraer lista',
+      icon: <Icon name={collapsedLists.has(list.id) ? 'chevron-up' : 'chevron-down'} />,
       onSelect: () => toggleListCollapsed(list.id),
     },
     { separator: true },
     {
       label: 'Color y límite…',
-      icon: '🎨',
+      icon: <Icon name="tag" />,
       onSelect: () => {
         setLimitDraft(list.cardLimit ? String(list.cardLimit) : '')
         setListMenu(list.id)
@@ -213,45 +324,54 @@ export default function BoardPage() {
     { separator: true },
     {
       label: 'Archivar lista',
-      icon: '📦',
+      icon: <Icon name="archive" />,
       onSelect: () => guarded(() => api.patch(`/lists/${list.id}`, { archived: true })),
     },
     {
       label: 'Eliminar lista',
-      icon: '🗑️',
+      icon: <Icon name="trash" />,
       danger: true,
-      onSelect: () => {
-        if (!window.confirm(`¿Eliminar la lista «${list.title}» y sus tarjetas?`)) return
-        guarded(() => api.del(`/lists/${list.id}`))
-      },
+      onSelect: () =>
+        askConfirm({
+          title: 'Eliminar lista',
+          message: `¿Eliminar la lista «${list.title}» y sus tarjetas?`,
+          confirmLabel: 'Eliminar lista',
+          onConfirm: () => guarded(() => api.del(`/lists/${list.id}`)),
+        }),
     },
   ]
 
   const cardMenuItems = (card) => [
-    { label: 'Abrir tarjeta', icon: '↗', onSelect: () => navigate(`/b/${boardId}/c/${card.id}`) },
+    {
+      label: 'Abrir tarjeta',
+      icon: <Icon name="arrow-up-right" />,
+      onSelect: () => navigate(`/b/${boardId}/c/${card.id}`),
+    },
     {
       label: 'Archivar tarjeta',
-      icon: '📦',
+      icon: <Icon name="archive" />,
       onSelect: () => guarded(() => api.patch(`/cards/${card.id}`, { archived: true })),
     },
     { separator: true },
     {
       label: 'Eliminar tarjeta',
-      icon: '🗑️',
+      icon: <Icon name="trash" />,
       danger: true,
-      onSelect: () => {
-        if (!window.confirm(`¿Eliminar la tarjeta «${card.title}»?`)) return
-        guarded(() => api.del(`/cards/${card.id}`))
-      },
+      onSelect: () =>
+        askConfirm({
+          title: 'Eliminar tarjeta',
+          message: `¿Eliminar la tarjeta «${card.title}»?`,
+          confirmLabel: 'Eliminar tarjeta',
+          onConfirm: () => guarded(() => api.del(`/cards/${card.id}`)),
+        }),
     },
   ]
 
   // ----------------------------------------------------------- búsqueda
 
   /**
-   * La búsqueda y los filtros viven en un panel que se abre con «Buscar».
-   * Al cerrarlo se limpian todos los filtros, para que no quede una vista
-   * filtrada sin que se vea por qué.
+   * La búsqueda vive en un modal y no filtra el tablero de fondo: al cerrarlo
+   * se limpian los filtros para que la siguiente búsqueda empiece de cero.
    */
   function closeSearch() {
     setSearchOpen(false)
@@ -284,6 +404,13 @@ export default function BoardPage() {
     setCollapsedLists(readCollapsedLists(collapsedKey))
   }, [collapsedKey])
 
+  /** Abre el renombrado en línea de una lista (y olvida cualquier cancelación previa). */
+  function startRenameList(list) {
+    renameCancelRef.current = false
+    setRenamingList(list.id)
+    setRenameDraft(list.title)
+  }
+
   function toggleListCollapsed(listId, value) {
     setCollapsedLists((previous) => {
       const next = new Set(previous)
@@ -296,24 +423,13 @@ export default function BoardPage() {
 
   const lists = useMemo(() => {
     if (!data) return []
-    return data.lists.map((list) => ({
-      ...list,
-      totalCards: list.cards.length,
-      cards: list.cards.filter((card) => matchesFilters(card, filters)),
-    }))
-  }, [data, filters])
+    return data.lists.map((list) => ({ ...list, totalCards: list.cards.length }))
+  }, [data])
 
-  const filtersActive = Boolean(filters.text)
-    || filters.due !== 'any'
-    || filters.labelIds.length > 0
-    || filters.memberIds.length > 0
-
-  const allCards = useMemo(() => (data ? data.lists.flatMap((list) => list.cards) : []), [data])
   const calendarCards = useMemo(
-    () => allCards.filter((card) => matchesFilters(card, filters)),
-    [allCards, filters]
+    () => (data ? data.lists.flatMap((list) => list.cards) : []),
+    [data]
   )
-  const visibleCount = lists.reduce((total, list) => total + list.cards.length, 0)
 
   /** Guarda el payload completo del tablero devuelto por la mayoría de endpoints. */
   const applyBoard = useCallback((payload) => {
@@ -372,7 +488,8 @@ export default function BoardPage() {
   }
 
   function startListDrag(event, list) {
-    if (touchRef.current.candidate) {
+    // Mientras se renombra la lista no se arrastra: el ratón selecciona texto.
+    if (touchRef.current.candidate || renamingList === list.id) {
       event.preventDefault()
       return
     }
@@ -703,7 +820,11 @@ export default function BoardPage() {
     const title = cardDraft.trim()
     if (!title) return
     setCardDraft('')
-    await guarded(() => api.post(`/lists/${listId}/cards`, { title }), { silent: true })
+    pendingCardScrollRef.current = listId
+    const created = await guarded(() => api.post(`/lists/${listId}/cards`, { title }), {
+      silent: true,
+    })
+    if (!created) pendingCardScrollRef.current = null
   }
 
   const createList = async (event) => {
@@ -741,11 +862,14 @@ export default function BoardPage() {
       <header className="board-header" onContextMenu={(event) => openContextMenu(event, boardMenuItems())}>
         <div className="board-header-left">
           <Link className="btn ghost small" to="/">
-            ← Tableros
+            <Icon name="arrow-left" size={14} />
+            Tableros
           </Link>
           {editingTitle ? (
             <form
               className="row"
+              data-board-title
+              ref={titleRef}
               onSubmit={async (event) => {
                 event.preventDefault()
                 const title = titleDraft.trim()
@@ -789,36 +913,46 @@ export default function BoardPage() {
               type="button"
               className={view === 'board' ? 'segment active' : 'segment'}
               onClick={() => setView('board')}
+              title="Vista de tablero"
             >
+              <Icon name="layout-grid" size={14} />
               Tablero
             </button>
             <button
               type="button"
               className={view === 'calendar' ? 'segment active' : 'segment'}
               onClick={() => setView('calendar')}
+              title="Vista de calendario"
             >
+              <Icon name="calendar" size={14} />
               Calendario
             </button>
           </div>
 
           <button className="btn ghost small" type="button" onClick={() => setDialog('members')}>
+            <Icon name="users" size={14} />
             Miembros
           </button>
-          <button className="btn ghost small" type="button" onClick={() => setDialog('labels')}>
-            Etiquetas
-          </button>
           <button
-            className={`btn ghost small${filtersActive ? ' active-filter' : ''}`}
+            className="btn ghost small"
             type="button"
             onClick={() => setSearchOpen(true)}
-            title="Buscar tarjetas y filtrar el tablero"
+            title="Buscar tarjetas del tablero"
           >
-            🔍 Buscar
+            <Icon name="search" size={14} />
+            Buscar
           </button>
 
-          <div className="menu-wrap">
-            <button className="btn ghost small" type="button" onClick={() => setMenuOpen((v) => !v)}>
-              Menú ▾
+          <div className="menu-wrap" ref={menuWrapRef}>
+            <button
+              className="btn ghost small"
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <Icon name="more-horizontal" size={14} />
+              Menú
             </button>
             {menuOpen && (
               <div className="popover right">
@@ -830,7 +964,30 @@ export default function BoardPage() {
                     setMenuOpen(false)
                   }}
                 >
+                  <Icon name="archive" size={14} />
                   Elementos archivados ({data.archivedCards.length + data.archivedLists.length})
+                </button>
+                <button
+                  className="btn ghost small"
+                  type="button"
+                  onClick={() => {
+                    setDialog('activity')
+                    setMenuOpen(false)
+                  }}
+                >
+                  <Icon name="history" size={14} />
+                  Actividad del tablero…
+                </button>
+                <button
+                  className="btn ghost small"
+                  type="button"
+                  onClick={() => {
+                    setDialog('labels')
+                    setMenuOpen(false)
+                  }}
+                >
+                  <Icon name="tag" size={14} />
+                  Etiquetas…
                 </button>
                 <button
                   className="btn ghost small"
@@ -840,25 +997,27 @@ export default function BoardPage() {
                     setMenuOpen(false)
                   }}
                 >
+                  <Icon name="image" size={14} />
                   Fondo del tablero…
-                </button>
-                <button
-                  className="btn ghost small"
-                  type="button"
-                  onClick={() => guarded(() => api.patch(`/boards/${boardId}`, { archived: true })).then(() => navigate('/'))}
-                >
-                  Archivar tablero
                 </button>
                 {isOwner && (
                   <button
                     className="btn ghost small danger"
                     type="button"
-                    onClick={async () => {
-                      if (!window.confirm(`¿Eliminar el tablero «${board.title}» y todas sus tarjetas?`)) return
-                      await guarded(() => api.del(`/boards/${boardId}`))
-                      navigate('/')
-                    }}
+                    onClick={() =>
+                      askConfirm({
+                        title: 'Eliminar tablero',
+                        message: `¿Eliminar el tablero «${board.title}» y todas sus tarjetas?`,
+                        confirmLabel: 'Eliminar tablero',
+                        onConfirm: async () => {
+                          setMenuOpen(false)
+                          await guarded(() => api.del(`/boards/${boardId}`))
+                          navigate('/')
+                        },
+                      })
+                    }
                   >
+                    <Icon name="trash" size={14} />
                     Eliminar tablero
                   </button>
                 )}
@@ -870,6 +1029,7 @@ export default function BoardPage() {
                     setMenuOpen(false)
                   }}
                 >
+                  <Icon name="user" size={14} />
                   Mi perfil
                 </button>
                 {user.isAdmin && (
@@ -880,11 +1040,13 @@ export default function BoardPage() {
                       setMenuOpen(false)
                       navigate('/admin')
                     }}
-                  >
-                    Panel de administración
-                  </button>
+                >
+                  <Icon name="shield" size={14} />
+                  Panel de administración
+                </button>
                 )}
                 <button className="btn ghost small" type="button" onClick={() => logout()}>
+                  <Icon name="log-out" size={14} />
                   Cerrar sesión
                 </button>
               </div>
@@ -894,46 +1056,41 @@ export default function BoardPage() {
       </header>
 
       {searchOpen && (
-        <div className="board-search" role="search">
-          <div className="board-search-row">
-            <span className="board-search-icon" aria-hidden="true">
-              🔍
-            </span>
-            <input
-              ref={searchRef}
-              className="search-input"
-              placeholder="Buscar tarjetas por título o descripción…"
-              value={filters.text}
-              onChange={(event) =>
-                setFilters((previous) => ({ ...previous, text: event.target.value }))
-              }
-              autoFocus
-            />
-            <button
-              className="btn ghost small"
-              type="button"
-              onClick={closeSearch}
-              title="Cerrar búsqueda (Esc)"
-              aria-label="Cerrar búsqueda"
-            >
-              ✕
-            </button>
-          </div>
-
-          <FilterBar
-            filters={filters}
-            onChange={setFilters}
-            board={data}
-            resultCount={visibleCount}
-            totalCount={allCards.length}
-          />
-        </div>
+        <SearchDialog
+          board={data}
+          filters={filters}
+          onChange={setFilters}
+          onClose={closeSearch}
+          onOpenCard={(id) => {
+            closeSearch()
+            navigate(`/b/${boardId}/c/${id}`)
+          }}
+        />
       )}
 
       {error && <p className="form-error board-alert">{error}</p>}
 
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          onCancel={() => setConfirmState(null)}
+          onConfirm={() => {
+            const action = confirmState.onConfirm
+            setConfirmState(null)
+            action()
+          }}
+        />
+      )}
+
       {view === 'calendar' ? (
-        <CalendarView cards={calendarCards} onOpenCard={(id) => navigate(`/b/${boardId}/c/${id}`)} />
+        <CalendarView
+          cards={calendarCards}
+          onOpenCard={(id) => navigate(`/b/${boardId}/c/${id}`)}
+          onToggleDue={toggleDueComplete}
+          onMoveCard={moveCardDue}
+        />
       ) : (
         <div
           className="board-canvas"
@@ -983,8 +1140,8 @@ export default function BoardPage() {
                     </button>
                   )}
                   <header
-                    className="list-head"
-                    draggable={listMenu !== list.id}
+                    className={`list-head${renamingList === list.id ? ' editing' : ''}`}
+                    draggable={listMenu !== list.id && renamingList !== list.id}
                     onDragStart={(event) => startListDrag(event, list)}
                     onDragEnd={endDrag}
                     onTouchStart={(event) => startListTouch(event, list)}
@@ -995,6 +1152,7 @@ export default function BoardPage() {
                         onSubmit={async (event) => {
                           event.preventDefault()
                           const title = renameDraft.trim()
+                          renameCancelRef.current = false
                           setRenamingList(null)
                           if (title && title !== list.title) {
                             await guarded(() => api.patch(`/lists/${list.id}`, { title }))
@@ -1005,11 +1163,26 @@ export default function BoardPage() {
                           value={renameDraft}
                           onChange={(event) => setRenameDraft(event.target.value)}
                           autoFocus
-                          onBlur={() => setRenamingList(null)}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Escape') return
+                            event.stopPropagation()
+                            renameCancelRef.current = true
+                            setRenamingList(null)
+                          }}
+                          onBlur={(event) => {
+                            if (renameCancelRef.current) {
+                              return
+                            }
+                            const title = event.target.value.trim()
+                            setRenamingList(null)
+                            if (title && title !== list.title) {
+                              guarded(() => api.patch(`/lists/${list.id}`, { title }))
+                            }
+                          }}
                         />
                       </form>
                     ) : (
-                      <h3 className="list-title" onClick={() => { setRenamingList(list.id); setRenameDraft(list.title) }}>
+                      <h3 className="list-title" onClick={() => startRenameList(list)}>
                         {list.title}
                       </h3>
                     )}
@@ -1020,16 +1193,20 @@ export default function BoardPage() {
                       {list.totalCards}
                       {list.cardLimit ? `/${list.cardLimit}` : ''}
                     </span>
-                    <div className="menu-wrap">
+                    <div className="menu-wrap" data-menu-wrap={list.id}>
                       <button
                         className="btn ghost small"
                         type="button"
+                        title={`Opciones de «${list.title}»`}
+                        aria-haspopup="menu"
+                        aria-expanded={listMenu === list.id}
+                        aria-label={`Opciones de «${list.title}»`}
                         onClick={() => {
                           setLimitDraft(list.cardLimit ? String(list.cardLimit) : '')
                           setListMenu(listMenu === list.id ? null : list.id)
                         }}
                       >
-                        ⋯
+                        <Icon name="more-vertical" size={15} />
                       </button>
                       {listMenu === list.id && (
                         <div className="popover right">
@@ -1037,11 +1214,11 @@ export default function BoardPage() {
                             className="btn ghost small"
                             type="button"
                             onClick={() => {
-                              setRenamingList(list.id)
-                              setRenameDraft(list.title)
+                              startRenameList(list)
                               setListMenu(null)
                             }}
                           >
+                            <Icon name="pencil" size={14} />
                             Renombrar lista
                           </button>
                           <button
@@ -1052,6 +1229,7 @@ export default function BoardPage() {
                               setListMenu(null)
                             }}
                           >
+                            <Icon name="plus" size={14} />
                             Añadir tarjeta
                           </button>
                           <button
@@ -1062,6 +1240,7 @@ export default function BoardPage() {
                               toggleListCollapsed(list.id, true)
                             }}
                           >
+                            <Icon name="chevron-down" size={14} />
                             Contraer lista
                           </button>
                           <button
@@ -1072,6 +1251,7 @@ export default function BoardPage() {
                               guarded(() => api.patch(`/lists/${list.id}`, { archived: true }))
                             }}
                           >
+                            <Icon name="archive" size={14} />
                             Archivar lista
                           </button>
                           <button
@@ -1079,11 +1259,15 @@ export default function BoardPage() {
                             type="button"
                             onClick={() => {
                               setListMenu(null)
-                              if (window.confirm(`¿Eliminar la lista «${list.title}» y sus tarjetas?`)) {
-                                guarded(() => api.del(`/lists/${list.id}`))
-                              }
+                              askConfirm({
+                                title: 'Eliminar lista',
+                                message: `¿Eliminar la lista «${list.title}» y sus tarjetas?`,
+                                confirmLabel: 'Eliminar lista',
+                                onConfirm: () => guarded(() => api.del(`/lists/${list.id}`)),
+                              })
                             }}
                           >
+                            <Icon name="trash" size={14} />
                             Eliminar lista
                           </button>
                           <div className="popover-section">
@@ -1130,29 +1314,16 @@ export default function BoardPage() {
                           </div>
                           <div className="popover-section">
                             <span className="meta-label">Color de la lista</span>
-                            <div className="swatches">
-                              <button
-                                type="button"
-                                title="Sin color"
-                                className={`swatch plain ${!list.color ? 'selected' : ''}`}
-                                onClick={() => {
-                                  setListMenu(null)
-                                  guarded(() => api.patch(`/lists/${list.id}`, { color: null }))
-                                }}
-                              />
-                              {LABEL_COLORS.map((color) => (
-                                <button
-                                  key={color}
-                                  type="button"
-                                  title={LABEL_COLOR_NAMES[color]}
-                                  className={`swatch bg-${color} ${list.color === color ? 'selected' : ''}`}
-                                  onClick={() => {
-                                    setListMenu(null)
-                                    guarded(() => api.patch(`/lists/${list.id}`, { color }))
-                                  }}
-                                />
-                              ))}
-                            </div>
+                            <ColorSelect
+                              label="Color de la lista"
+                              title="Color de la lista"
+                              value={list.color}
+                              allowNone
+                              onPick={(color) => {
+                                setListMenu(null)
+                                guarded(() => api.patch(`/lists/${list.id}`, { color }))
+                              }}
+                            />
                           </div>
                         </div>
                       )}
@@ -1173,11 +1344,7 @@ export default function BoardPage() {
                             if (justDraggedRef.current) return
                             navigate(`/b/${boardId}/c/${card.id}`)
                           }}
-                          onToggleDue={() =>
-                            guarded(() =>
-                              api.patch(`/cards/${card.id}`, { dueComplete: !card.dueComplete })
-                            )
-                          }
+                          onToggleDue={() => toggleDueComplete(card.id, !card.dueComplete)}
                           onDragStart={(event) => startCardDrag(event, card, list.id)}
                           onDragEnd={endDrag}
                           onTouchStart={(event) => startCardTouch(event, card, list.id)}
@@ -1190,7 +1357,7 @@ export default function BoardPage() {
                       <p className="muted small list-empty">
                         {drag?.type === 'card'
                           ? 'Suelta aquí la tarjeta'
-                          : 'Sin tarjetas con los filtros actuales.'}
+                          : 'Sin tarjetas'}
                       </p>
                     )}
                   </div>
@@ -1199,6 +1366,7 @@ export default function BoardPage() {
                     {cardComposer === list.id ? (
                       <form
                         className="stack"
+                        data-list-composer={list.id}
                         onSubmit={async (event) => {
                           event.preventDefault()
                           await createCard(list.id)
@@ -1228,14 +1396,15 @@ export default function BoardPage() {
                       </form>
                     ) : (
                       <button
-                        className="btn ghost block"
+                        className="btn ghost wide"
                         type="button"
                         onClick={() => {
                           setCardComposer(list.id)
                           setCardDraft('')
                         }}
                       >
-                        + Añadir tarjeta
+                        <Icon name="plus" size={14} />
+                        Añadir tarjeta
                       </button>
                     )}
                   </footer>
@@ -1243,9 +1412,11 @@ export default function BoardPage() {
               </div>
             ))}
 
-            <div className="list-slot new-list">
+            {/* La lista nueva se nombra en su sitio: al final del tablero, como
+                una columna más. Solo existe en la vista de tablero. */}
+            <div className="list-slot new-list-slot">
               {addingList ? (
-                <form className="list new-list-form" onSubmit={createList}>
+                <form className="list new-list-form" onSubmit={createList} data-new-list>
                   <input
                     placeholder="Título de la lista"
                     value={newListTitle}
@@ -1262,8 +1433,14 @@ export default function BoardPage() {
                   </div>
                 </form>
               ) : (
-                <button className="btn ghost block plus" type="button" onClick={() => setAddingList(true)}>
-                  + Añadir otra lista
+                <button
+                  className="btn ghost small new-list-button"
+                  type="button"
+                  onClick={() => setAddingList(true)}
+                  title="Añadir una lista al final del tablero"
+                >
+                  <Icon name="list-plus" size={14} />
+                  Añadir lista
                 </button>
               )}
             </div>
@@ -1282,14 +1459,7 @@ export default function BoardPage() {
       )}
 
       {dialog === 'labels' && (
-        <LabelsDialog
-          board={data}
-          onClose={() => setDialog(null)}
-          onBoardChange={(payload) => {
-            if (payload && payload.board) setData(payload)
-            else refresh()
-          }}
-        />
+        <LabelsDialog board={data} onClose={() => setDialog(null)} onBoardChange={applyBoard} />
       )}
 
       {dialog === 'members' && (
@@ -1301,6 +1471,10 @@ export default function BoardPage() {
             if (partial?.members) setData((prev) => ({ ...prev, members: partial.members }))
           }}
         />
+      )}
+
+      {dialog === 'activity' && (
+        <BoardActivityDialog activity={data.activity} onClose={() => setDialog(null)} />
       )}
 
       {dialog === 'archived' && (

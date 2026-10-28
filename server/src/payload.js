@@ -86,6 +86,7 @@ function shapeCard(card, { labels, members, checklist, commentCount }) {
     priority: card.priority,
     coverColor: card.cover_color,
     coverImage: card.cover_image,
+    coverPosition: card.cover_position || 'center',
     position: card.position,
     archived: !!card.archived,
     createdAt: card.created_at,
@@ -112,6 +113,35 @@ export function summarizeCards(db, cards) {
       commentCount: comments.get(card.id),
     })
   )
+}
+
+/** Últimas 15 entradas del historial de un tablero o de una tarjeta. */
+function activityList(db, boardId, cardId = null) {
+  const rows = db
+    .prepare(
+      `SELECT a.id, a.kind, a.message, a.created_at,
+              u.id AS user_id, u.username, u.name, u.avatar
+         FROM activity a LEFT JOIN users u ON u.id = a.user_id
+        WHERE a.board_id = ? AND ${cardId ? 'a.card_id = ?' : 'a.card_id IS NULL'}
+        ORDER BY a.created_at DESC, a.rowid DESC
+        LIMIT 15`
+    )
+    .all(...(cardId ? [boardId, cardId] : [boardId]))
+
+  return rows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    message: row.message,
+    createdAt: row.created_at,
+    user: row.user_id
+      ? {
+          id: row.user_id,
+          username: row.username,
+          name: row.name,
+          avatar: row.avatar || null,
+        }
+      : null,
+  }))
 }
 
 export function memberList(db, boardId) {
@@ -170,6 +200,7 @@ export function boardPayload(db, boardId) {
     archivedLists: db
       .prepare('SELECT id, title FROM lists WHERE board_id = ? AND archived = 1 ORDER BY title')
       .all(boardId),
+    activity: activityList(db, boardId),
   }
 }
 
@@ -205,6 +236,7 @@ export function cardPayload(db, cardId) {
   return {
     ...summary,
     listTitle: list ? list.title : '',
+    activity: activityList(db, card.board_id, cardId),
     checklists: checklists.map((checklist) => ({
       id: checklist.id,
       title: checklist.title,

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import Avatar from '../components/Avatar.jsx'
+import ConfirmDialog from '../components/ConfirmDialog.jsx'
 
 const EMPTY_FORM = { username: '', name: '', email: '', password: '', isAdmin: false }
 
@@ -32,6 +33,7 @@ export default function Admin() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [resetFor, setResetFor] = useState(null)
   const [resetPassword, setResetPassword] = useState('')
+  const [confirmUser, setConfirmUser] = useState(null)
 
   const load = useCallback(async () => {
     try {
@@ -308,16 +310,7 @@ export default function Admin() {
                             className="btn ghost small danger"
                             type="button"
                             disabled={busy || self}
-                            onClick={async () => {
-                              const okay = window.confirm(
-                                `¿Eliminar la cuenta de @${row.username} y los ${row.ownedBoards} tableros de los que es propietario? No se puede deshacer.`
-                              )
-                              if (!okay) return
-                              await run(
-                                () => api.del(`/admin/users/${row.id}`),
-                                `Cuenta @${row.username} eliminada`
-                              )
-                            }}
+                            onClick={() => setConfirmUser(row)}
                           >
                             Eliminar
                           </button>
@@ -374,6 +367,23 @@ export default function Admin() {
           </>
         )}
       </main>
+
+      {confirmUser && (
+        <ConfirmDialog
+          title="Eliminar cuenta"
+          message={`¿Eliminar la cuenta de @${confirmUser.username} y los ${confirmUser.ownedBoards} tableros de los que es propietario? No se puede deshacer.`}
+          confirmLabel="Eliminar cuenta"
+          onCancel={() => setConfirmUser(null)}
+          onConfirm={async () => {
+            const target = confirmUser
+            setConfirmUser(null)
+            await run(
+              () => api.del(`/admin/users/${target.id}`),
+              `Cuenta @${target.username} eliminada`
+            )
+          }}
+        />
+      )}
     </div>
   )
 }

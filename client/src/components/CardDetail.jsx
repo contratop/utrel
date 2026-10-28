@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import Avatar from './Avatar.jsx'
+import ActivityFeed from './ActivityFeed.jsx'
+import Icon from './Icon.jsx'
+import ColorSelect from './ColorSelect.jsx'
+import ConfirmDialog from './ConfirmDialog.jsx'
 import { Markdown } from '../lib/markdown.jsx'
-import { coverImageStyle } from '../lib/backgrounds.js'
-import { LABEL_COLORS, LABEL_COLOR_NAMES, PRIORITIES, PRIORITY_LABEL } from '../lib/constants.js'
+import { dropIndexFromRects, serverIndexFor } from '../lib/dnd.js'
+import { COVER_POSITION_OPTIONS, coverImageStyle } from '../lib/backgrounds.js'
+import { LABEL_COLOR_NAMES, PRIORITIES, PRIORITY_LABEL } from '../lib/constants.js'
+import { useBackdropPress, useDismissOnOutside } from '../lib/editing.js'
 import {
   dueStatus,
   dueStatusLabel,
@@ -12,6 +18,19 @@ import {
   fromLocalInput,
   toLocalInput,
 } from '../lib/dueDate.js'
+
+/** El título del detalle es de una sola línea y como mucho 100 caracteres. */
+const cleanTitle = (value) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 100)
+
+/**
+ * Textarea que crece con su contenido: el texto de un elemento de checklist se
+ * ve entero de un vistazo, sin quedar recortado en una línea.
+ */
+function growTextarea(node) {
+  if (!node) return
+  node.style.height = 'auto'
+  node.style.height = `${node.scrollHeight}px`
+}
 
 export default function CardDetail({ cardId, board, currentUser, onClose, onBoardChange }) {
   const [card, setCard] = useState(null)
@@ -30,6 +49,19 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
   const [busy, setBusy] = useState(false)
   const [coverUrl, setCoverUrl] = useState('')
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [dragGhost, setDragGhost] = useState(null)
+  const [checklistHint, setChecklistHint] = useState(null)
+  const [itemHint, setItemHint] = useState(null)
+
+  const dragStateRef = useRef(null)
+  const checklistHintRef = useRef(null)
+  const itemHintRef = useRef(null)
+
+  const titleRef = useRef(null)
+  const descRef = useRef(null)
+  const descTextareaRef = useRef(null)
+  const descSelectionRef = useRef(null)
 
   const load = useCallback(async () => {
     try {
@@ -45,13 +77,259 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
     load()
   }, [load])
 
+  // La cinta de formato cambia el texto y recoloca la selección después del
+  // repintado de React, para poder seguir escribiendo donde estabas.
   useEffect(() => {
-    const onKey = (event) => {
-      if (event.key === 'Escape') onClose()
+    const selection = descSelectionRef.current
+    if (!selection) return
+    const node = descTextareaRef.current
+    if (!node) return
+    descSelectionRef.current = null
+    node.focus()
+    node.setSelectionRange(selection[0], selection[1])
+  }, [descDraft, descEditing])
+
+  function updateDescription(next, selection) {
+    descSelectionRef.current = selection
+    setDescDraft(next)
+  }
+
+  /** Envuelve el texto seleccionado (o un texto de ejemplo) entre dos marcas. */
+  function applyInlineFormat(before, after = before, placeholder = 'texto') {
+    const node = descTextareaRef.current
+    if (!node) return
+    const start = node.selectionStart
+    const end = node.selectionEnd
+    const selected = descDraft.slice(start, end) || placeholder
+    const next = `${descDraft.slice(0, start)}${before}${selected}${after}${descDraft.slice(end)}`
+    updateDescription(next, [start + before.length, start + before.length + selected.length])
+  }
+
+  /** Aplica (o quita) un prefijo de bloque a cada línea seleccionada. */
+  function applyLineFormat(prefix) {
+    const node = descTextareaRef.current
+    if (!node) return
+    const start = node.selectionStart
+    const end = node.selectionEnd
+    const lineStart = start === 0 ? 0 : descDraft.lastIndexOf('\n', start - 1) + 1
+    const nextBreak = descDraft.indexOf('\n', end)
+    const sliceEnd = nextBreak === -1 ? descDraft.length : nextBreak
+    const lines = descDraft.slice(lineStart, sliceEnd).split('\n')
+    const remove = lines.every((line) => !line.trim() || line.startsWith(prefix))
+    const updated = lines
+      .map((line) => {
+        if (!line.trim()) return line
+        return remove ? line.slice(prefix.length) : prefix + line
+      })
+      .join('\n')
+    updateDescription(descDraft.slice(0, lineStart) + updated + descDraft.slice(sliceEnd), [
+      lineStart,
+      lineStart + updated.length,
+    ])
+  }
+
+  function applyLinkFormat() {
+    const node = descTextareaRef.current
+    if (!node) return
+    const start = node.selectionStart
+    const end = node.selectionEnd
+    const selected = descDraft.slice(start, end) || 'texto'
+    const url = 'https://ejemplo.com'
+    const next = `${descDraft.slice(0, start)}[${selected}](${url})${descDraft.slice(end)}`
+    updateDescription(next, [start + selected.length + 3, start + selected.length + 3 + url.length])
+  }
+
+  function insertDivider() {
+    const node = descTextareaRef.current
+    if (!node) return
+    const start = node.selectionStart
+    const end = node.selectionEnd
+    const head = descDraft.slice(0, start)
+    const tail = descDraft.slice(end)
+    const lead = head && !head.endsWith('\n') ? '\n\n' : ''
+    const trail = tail && !tail.startsWith('\n') ? '\n\n' : '\n'
+    const insert = `${lead}---${trail}`
+    updateDescription(head + insert + tail, [start + insert.length, start + insert.length])
+  }
+
+  // ------------------------------------------------- arrastre de checklists
+  //
+  // El asa tiene `touch-action: none`, así que el mismo gesto sirve con ratón,
+  // dedo o lápiz. Mientras se arrastra se calcula el hueco con los rectángulos
+  // ya pintados y al soltar se envía el índice al servidor.
+
+  function setChecklistHintValue(next) {
+    checklistHintRef.current = next
+    setChecklistHint(next)
+  }
+
+  function setItemHintValue(next) {
+    itemHintRef.current = next
+    setItemHint(next)
+  }
+
+  function cancelListDrag() {
+    dragStateRef.current = null
+    setDragGhost(null)
+    setChecklistHintValue(null)
+    setItemHintValue(null)
+  }
+
+  function startChecklistDrag(event, checklist) {
+    if (event.button !== undefined && event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    dragStateRef.current = {
+      kind: 'checklist',
+      id: checklist.id,
+      label: checklist.title,
+      x: event.clientX,
+      y: event.clientY,
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+    setDragGhost({ kind: 'checklist', label: checklist.title, x: event.clientX, y: event.clientY })
+    setChecklistHintValue(null)
+    setItemHintValue(null)
+  }
+
+  function startItemDrag(event, item, checklist) {
+    if (event.button !== undefined && event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    dragStateRef.current = {
+      kind: 'item',
+      id: item.id,
+      checklistId: checklist.id,
+      label: item.text,
+      x: event.clientX,
+      y: event.clientY,
+    }
+    setDragGhost({ kind: 'item', label: item.text, x: event.clientX, y: event.clientY })
+    setChecklistHintValue(null)
+    setItemHintValue(null)
+  }
+
+  function computeListDragHint(x, y) {
+    const state = dragStateRef.current
+    if (!state) return
+
+    if (state.kind === 'checklist') {
+      // Fuera del modal (el fondo) el gesto se cancela en vez de mandar la
+      // checklist al final sin querer.
+      if (typeof document.elementFromPoint === 'function') {
+        const hit = document.elementFromPoint(x, y)
+        if (!hit || !hit.closest || !hit.closest('.card-modal')) {
+          if (checklistHintRef.current !== null) setChecklistHintValue(null)
+          return
+        }
+      }
+      const rects = [...document.querySelectorAll('[data-checklist-id]')].map((el) => {
+        const rect = el.getBoundingClientRect()
+        return { top: rect.top, height: rect.height }
+      })
+      const index = dropIndexFromRects(rects, y)
+      if (checklistHintRef.current !== index) setChecklistHintValue(index)
+      return
+    }
+
+    const hit =
+      typeof document.elementFromPoint === 'function' ? document.elementFromPoint(x, y) : null
+    const checklistEl = hit && hit.closest ? hit.closest('[data-checklist-id]') : null
+    if (!checklistEl) {
+      if (itemHintRef.current) setItemHintValue(null)
+      return
+    }
+    const checklistId = checklistEl.getAttribute('data-checklist-id')
+    const rects = [...checklistEl.querySelectorAll('[data-item-id]')].map((el) => {
+      const rect = el.getBoundingClientRect()
+      return { top: rect.top, height: rect.height }
+    })
+    const index = dropIndexFromRects(rects, y)
+    const prev = itemHintRef.current
+    if (prev && prev.checklistId === checklistId && prev.index === index) return
+    setItemHintValue({ checklistId, index })
+  }
+
+  function finishListDrag() {
+    const state = dragStateRef.current
+    const checklistIndex = checklistHintRef.current
+    const itemDrop = itemHintRef.current
+    cancelListDrag()
+    if (!state || !card) return
+
+    if (state.kind === 'checklist') {
+      if (checklistIndex === null) return
+      const from = card.checklists.findIndex((list) => list.id === state.id)
+      if (from < 0) return
+      const index = serverIndexFor(checklistIndex, { sameList: true, fromIndex: from })
+      run(() => api.patch(`/checklists/${state.id}`, { targetIndex: index }))
+      return
+    }
+
+    if (!itemDrop) return
+    const source = card.checklists.find((list) => list.items.some((item) => item.id === state.id))
+    if (!source) return
+    const sameList = source.id === itemDrop.checklistId
+    const fromIndex = sameList ? source.items.findIndex((item) => item.id === state.id) : -1
+    const index = serverIndexFor(itemDrop.index, { sameList, fromIndex })
+    run(() =>
+      api.patch(`/checklist-items/${state.id}`, {
+        checklistId: itemDrop.checklistId,
+        targetIndex: index,
+      })
+    )
+  }
+
+  useEffect(() => {
+    if (!dragGhost) return undefined
+    const previousSelect = document.body.style.userSelect
+    document.body.style.userSelect = 'none'
+    const onMove = (event) => {
+      const state = dragStateRef.current
+      if (!state) return
+      state.x = event.clientX
+      state.y = event.clientY
+      setDragGhost((ghost) =>
+        ghost ? { ...ghost, x: event.clientX, y: event.clientY } : ghost
+      )
+      computeListDragHint(event.clientX, event.clientY)
+    }
+    const onUp = () => {
+      const state = dragStateRef.current
+      if (state) computeListDragHint(state.x, state.y)
+      finishListDrag()
+    }
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      cancelListDrag()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', cancelListDrag)
+    window.addEventListener('keydown', onKey, true)
+    return () => {
+      document.body.style.userSelect = previousSelect
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', cancelListDrag)
+      window.removeEventListener('keydown', onKey, true)
+    }
+    // Solo se reactiva al empezar o terminar un arrastre.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(dragGhost)])
+
+  const markdownTools = [
+    { label: 'Negrita', icon: 'bold', action: () => applyInlineFormat('**') },
+    { label: 'Cursiva', icon: 'italic', action: () => applyInlineFormat('_') },
+    { label: 'Tachado', icon: 'strikethrough', action: () => applyInlineFormat('~~') },
+    { label: 'Encabezado', icon: 'heading', action: () => applyLineFormat('# ') },
+    { label: 'Lista', icon: 'list', action: () => applyLineFormat('- ') },
+    { label: 'Checklist', icon: 'list-checks', action: () => applyLineFormat('- [ ] ') },
+    { label: 'Cita', icon: 'quote', action: () => applyLineFormat('> ') },
+    { label: 'Código', icon: 'code', action: () => applyInlineFormat('`', '`', 'código') },
+    { label: 'Enlace', icon: 'link', action: applyLinkFormat },
+    { label: 'Separador', icon: 'minus', action: insertDivider },
+  ]
 
   /** Ejecuta una mutación que devuelve { card } y refresca el tablero. */
   async function run(action) {
@@ -69,6 +347,54 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
   }
 
   const patch = (payload) => run(() => api.patch(`/cards/${card?.id}`, payload))
+
+  const editingSomething = editingTitle || descEditing || editingComment !== null
+
+  // Por defecto se guarda al salir del campo, pero solo cuando la pulsación
+  // termina fuera: seleccionar texto (aunque el ratón acabe fuera del cuadro) o
+  // un clic accidental no descartan lo que estás escribiendo.
+  useDismissOnOutside({
+    active: editingTitle,
+    contains: (node) => Boolean(titleRef.current && titleRef.current.contains(node)),
+    onDismiss: () => {
+      const title = cleanTitle(titleDraft)
+      setEditingTitle(false)
+      if (title && title !== card.title) patch({ title })
+    },
+  })
+
+  useDismissOnOutside({
+    active: descEditing,
+    contains: (node) => Boolean(descRef.current && descRef.current.contains(node)),
+    onDismiss: () => {
+      setDescEditing(false)
+      if (descDraft !== (card.description || '')) patch({ description: descDraft })
+    },
+  })
+
+  // Escape sale del campo que estás editando; solo cierra la tarjeta cuando no
+  // hay nada abierto.
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return
+      if (editingTitle || descEditing) {
+        setEditingTitle(false)
+        setDescEditing(false)
+        return
+      }
+      if (editingComment !== null) {
+        setEditingComment(null)
+        return
+      }
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [editingTitle, descEditing, editingComment, onClose])
+
+  // El fondo solo cierra la tarjeta si la pulsación empezó y terminó ahí; si
+  // había un editor abierto, el primer clic se limita a cerrarlo.
+  const backdrop = useBackdropPress(() => onClose())
 
   async function uploadCover(event) {
     const file = event.target.files && event.target.files[0]
@@ -106,7 +432,13 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
   const coverStyle = coverImageStyle(card)
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => backdrop.onPointerDown(event, editingSomething)}
+      onTouchStart={(event) => backdrop.onPointerDown(event, editingSomething)}
+      onClick={backdrop.onClick}
+    >
       <div
         className={`modal card-modal${coverStyle || card.coverColor ? ' has-cover' : ''}`}
         onClick={(event) => event.stopPropagation()}
@@ -122,7 +454,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
           {card.archived && <span className="pill">Archivada</span>}
           <div className="modal-head-actions">
             <button className="btn ghost small" type="button" onClick={onClose} title="Cerrar (Esc)">
-              ✕
+              <Icon name="x" size={15} />
             </button>
           </div>
         </div>
@@ -133,23 +465,24 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
           <div className="card-modal-main">
             <div className="card-title-block">
               {editingTitle ? (
-                <div className="stack">
-                  <textarea
+                <div className="stack" data-card-title ref={titleRef}>
+                  <input
                     value={titleDraft}
                     onChange={(event) => setTitleDraft(event.target.value)}
-                    rows={2}
+                    maxLength={100}
                     autoFocus
                   />
                   <div className="row">
                     <button
                       className="btn primary small"
                       type="button"
-                      disabled={busy || !titleDraft.trim()}
+                      disabled={busy || !cleanTitle(titleDraft)}
                       onClick={async () => {
-                        await patch({ title: titleDraft.trim() })
+                        await patch({ title: cleanTitle(titleDraft) })
                         setEditingTitle(false)
                       }}
                     >
+                      <Icon name="save" size={14} />
                       Guardar
                     </button>
                     <button className="btn ghost small" type="button" onClick={() => setEditingTitle(false)}>
@@ -162,11 +495,11 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                   className="card-modal-title"
                   title="Clic para editar el título"
                   onClick={() => {
-                    setTitleDraft(card.title)
+                    setTitleDraft(cleanTitle(card.title))
                     setEditingTitle(true)
                   }}
                 >
-                  {card.title}
+                  {cleanTitle(card.title)}
                 </h2>
               )}
             </div>
@@ -183,7 +516,10 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
 
             <div className="meta-grid">
               <div className="meta-col">
-                <span className="meta-label">Fecha de vencimiento</span>
+                <span className="meta-label">
+                  <Icon name="calendar" size={13} />
+                  Fecha de vencimiento
+                </span>
                 <div className="row wrap">
                   {card.dueDate ? (
                     <span className={`pill due-${status}`}>{formatDue(card.dueDate)}</span>
@@ -196,6 +532,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                     type="button"
                     onClick={() => setPanel(panel === 'due' ? null : 'due')}
                   >
+                    <Icon name="calendar-clock" size={14} />
                     Editar
                   </button>
                 </div>
@@ -223,6 +560,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                         type="button"
                         onClick={() => patch({ dueDate: null, dueComplete: false })}
                       >
+                        <Icon name="calendar-x" size={14} />
                         Quitar fecha
                       </button>
                     )}
@@ -231,7 +569,10 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
               </div>
 
               <div className="meta-col">
-                <span className="meta-label">Prioridad</span>
+                <span className="meta-label">
+                  <Icon name="flag" size={13} />
+                  Prioridad
+                </span>
                 <select
                   value={card.priority}
                   onChange={(event) => patch({ priority: event.target.value })}
@@ -246,30 +587,29 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
               </div>
 
               <div className="meta-col">
-                <span className="meta-label">Fondo de la tarjeta</span>
-                <div className="swatches">
-                  <button
-                    type="button"
-                    className={`swatch plain ${!card.coverColor && !card.coverImage ? 'selected' : ''}`}
-                    title="Sin fondo"
-                    onClick={() => patch({ coverColor: null, coverImage: null })}
+                <span className="meta-label">
+                  <Icon name="image" size={13} />
+                  Fondo de la tarjeta
+                </span>
+                <div className="row wrap">
+                  <ColorSelect
+                    label="Color de fondo de la tarjeta"
+                    title="Color de fondo de la tarjeta"
+                    value={card.coverColor}
+                    allowNone
+                    noneLabel="Sin fondo"
+                    displayLabel={coverStyle ? 'Imagen' : undefined}
+                    onPick={(color) => patch({ coverColor: color, coverImage: null })}
                   />
-                  {LABEL_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      title={LABEL_COLOR_NAMES[color]}
-                      className={`swatch bg-${color} ${card.coverColor === color ? 'selected' : ''}`}
-                      onClick={() => patch({ coverColor: color, coverImage: null })}
-                    />
-                  ))}
                   <button
                     type="button"
-                    className={`swatch image-swatch${coverStyle ? ' selected' : ''}`}
+                    className={`btn ghost small${coverStyle ? ' active-filter' : ''}`}
                     title="Imagen de fondo"
+                    aria-label="Imagen de fondo"
                     onClick={() => setPanel(panel === 'cover' ? null : 'cover')}
                   >
-                    🖼
+                    <Icon name="image" size={14} />
+                    Imagen
                   </button>
                 </div>
                 {panel === 'cover' && (
@@ -279,6 +619,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                     </p>
                     <div className="row wrap">
                       <label className={`btn small${uploadingCover ? ' disabled' : ''}`}>
+                        <Icon name={uploadingCover ? 'loader' : 'image'} size={14} className={uploadingCover ? 'spin' : ''} />
                         {uploadingCover ? 'Subiendo…' : 'Subir imagen'}
                         <input
                           type="file"
@@ -294,6 +635,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                           type="button"
                           onClick={() => patch({ coverImage: null })}
                         >
+                          <Icon name="image-off" size={14} />
                           Quitar imagen
                         </button>
                       )}
@@ -314,15 +656,54 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                         onChange={(event) => setCoverUrl(event.target.value)}
                       />
                       <button className="btn small" type="submit" disabled={!coverUrl.trim()}>
+                        <Icon name="link" size={14} />
                         Usar URL
                       </button>
                     </form>
+
+                    {card.coverImage && (
+                      <div className="cover-position" data-cover-position>
+                        <span className="muted small">
+                          Encuadre de la imagen en la tarjeta
+                        </span>
+                        <div
+                          className="cover-position-preview"
+                          style={
+                            coverStyle
+                              ? {
+                                  backgroundImage: coverStyle.backgroundImage,
+                                  backgroundPosition: coverStyle.backgroundPosition,
+                                }
+                              : undefined
+                          }
+                        >
+                          <div className="cover-position-grid">
+                            {COVER_POSITION_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={`cover-position-cell${
+                                  (card.coverPosition || 'center') === option.value ? ' active' : ''
+                                }`}
+                                title={option.label}
+                                aria-label={`Encuadrar la imagen: ${option.label}`}
+                                aria-pressed={(card.coverPosition || 'center') === option.value}
+                                onClick={() => patch({ coverPosition: option.value })}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
               <div className="meta-col">
-                <span className="meta-label">Etiquetas</span>
+                <span className="meta-label">
+                  <Icon name="tag" size={13} />
+                  Etiquetas
+                </span>
                 <div className="row wrap">
                   {card.labels.map((label) => (
                     <span key={label.id} className={`label-chip bg-${label.color}`}>
@@ -334,7 +715,8 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                     type="button"
                     onClick={() => setPanel(panel === 'labels' ? null : 'labels')}
                   >
-                    + Añadir
+                    <Icon name="plus" size={14} />
+                    Añadir
                   </button>
                 </div>
                 {panel === 'labels' &&
@@ -367,7 +749,10 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
 
             <section className="block">
               <div className="block-head">
-                <h3>Descripción</h3>
+                <h3>
+                  <Icon name="align-left" size={15} />
+                  Descripción
+                </h3>
                 {!descEditing && (
                   <button
                     className="btn ghost small"
@@ -378,19 +763,21 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                       setDescEditing(true)
                     }}
                   >
+                    <Icon name="pencil" size={14} />
                     Editar
                   </button>
                 )}
               </div>
 
               {descEditing ? (
-                <div className="desc-editor">
+                <div className="desc-editor" data-card-desc ref={descRef}>
                   <div className="tabs">
                     <button
                       type="button"
                       className={descTab === 'write' ? 'tab active' : 'tab'}
                       onClick={() => setDescTab('write')}
                     >
+                      <Icon name="pencil" size={14} />
                       Escribir
                     </button>
                     <button
@@ -398,20 +785,39 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                       className={descTab === 'preview' ? 'tab active' : 'tab'}
                       onClick={() => setDescTab('preview')}
                     >
+                      <Icon name="eye" size={14} />
                       Vista previa
                     </button>
                   </div>
                   {descTab === 'write' ? (
-                    <textarea
-                      rows={8}
-                      value={descDraft}
-                      onChange={(event) => setDescDraft(event.target.value)}
-                      placeholder={'# Objetivo\n\n- [ ] primer paso\n- [x] paso hecho\n\n**negrita**, *cursiva*, `código` y [enlaces](https://ejemplo.com)'}
-                      autoFocus
-                    />
+                    <>
+                      <div className="desc-toolbar" role="toolbar" aria-label="Formato Markdown">
+                        {markdownTools.map((tool) => (
+                          <button
+                            key={tool.label}
+                            className="desc-tool"
+                            type="button"
+                            title={tool.label}
+                            aria-label={tool.label}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={tool.action}
+                          >
+                            <Icon name={tool.icon} size={14} />
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        ref={descTextareaRef}
+                        rows={8}
+                        value={descDraft}
+                        onChange={(event) => setDescDraft(event.target.value)}
+                        placeholder={'# Objetivo\n\n- [ ] primer paso\n- [x] paso hecho\n\n**negrita**, *cursiva*, `código` y [enlaces](https://ejemplo.com)'}
+                        autoFocus
+                      />
+                    </>
                   ) : (
                     <div className="desc-preview">
-                      <Markdown text={descDraft || '_Nada que previsualizar_' } />
+                      <Markdown text={descDraft || '_Nada que previsualizar_'} />
                     </div>
                   )}
                   <div className="row">
@@ -424,9 +830,11 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                         setDescEditing(false)
                       }}
                     >
+                      <Icon name="save" size={14} />
                       Guardar
                     </button>
                     <button className="btn ghost small" type="button" onClick={() => setDescEditing(false)}>
+                      <Icon name="x" size={14} />
                       Cancelar
                     </button>
                     <span className="muted small">Markdown enriquecido (GFM)</span>
@@ -441,15 +849,30 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
 
             <section className="block">
               <div className="block-head">
-                <h3>Checklists</h3>
+                <h3>
+                  <Icon name="list-checks" size={15} />
+                  Checklists
+                </h3>
               </div>
 
-              {card.checklists.map((checklist) => {
+              {card.checklists.map((checklist, checklistIndex) => {
                 const done = checklist.items.filter((item) => item.done).length
                 const percent = checklist.items.length ? Math.round((done / checklist.items.length) * 100) : 0
+                const showDropLine = dragGhost?.kind === 'checklist' && checklistHint === checklistIndex
                 return (
-                  <div key={checklist.id} className="checklist">
+                  <Fragment key={checklist.id}>
+                  {showDropLine && <div className="drag-insert-line" aria-hidden="true" />}
+                  <div className="checklist" data-checklist-id={checklist.id}>
                     <div className="checklist-head">
+                      <button
+                        className="drag-handle"
+                        type="button"
+                        title="Arrastrar checklist"
+                        aria-label={`Mover el checklist «${checklist.title}»`}
+                        onPointerDown={(event) => startChecklistDrag(event, checklist)}
+                      >
+                        <Icon name="grip-vertical" size={14} />
+                      </button>
                       <input
                         className="inline-title"
                         defaultValue={checklist.title}
@@ -465,6 +888,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                         type="button"
                         onClick={() => run(() => api.del(`/checklists/${checklist.id}`))}
                       >
+                        <Icon name="trash" size={14} />
                         Eliminar
                       </button>
                     </div>
@@ -478,36 +902,60 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                       </div>
                     </div>
 
-                    <ul className="checklist-items">
-                      {checklist.items.map((item) => (
-                        <li key={item.id} className={item.done ? 'item done' : 'item'}>
-                          <input
-                            type="checkbox"
-                            checked={item.done}
-                            onChange={() =>
-                              run(() => api.patch(`/checklist-items/${item.id}`, { done: !item.done }))
-                            }
-                          />
-                          <input
-                            className="inline-title"
-                            defaultValue={item.text}
-                            onBlur={(event) => {
-                              const value = event.target.value.trim()
-                              if (value && value !== item.text) {
-                                run(() => api.patch(`/checklist-items/${item.id}`, { text: value }))
+                    <ul className="checklist-items" data-checklist-items={checklist.id}>
+                      {checklist.items.map((item, itemIndex) => (
+                        <Fragment key={item.id}>
+                          {dragGhost?.kind === 'item' &&
+                            itemHint?.checklistId === checklist.id &&
+                            itemHint.index === itemIndex && (
+                              <li className="drag-insert-line item-line" aria-hidden="true" />
+                            )}
+                          <li className={item.done ? 'item done' : 'item'} data-item-id={item.id}>
+                            <button
+                              className="drag-handle item-handle"
+                              type="button"
+                              title="Arrastrar elemento"
+                              aria-label={`Mover «${item.text}»`}
+                              onPointerDown={(event) => startItemDrag(event, item, checklist)}
+                            >
+                              <Icon name="grip-vertical" size={13} />
+                            </button>
+                            <input
+                              type="checkbox"
+                              checked={item.done}
+                              onChange={() =>
+                                run(() => api.patch(`/checklist-items/${item.id}`, { done: !item.done }))
                               }
-                            }}
-                          />
-                          <button
-                            className="btn ghost small"
-                            type="button"
-                            title="Eliminar elemento"
-                            onClick={() => run(() => api.del(`/checklist-items/${item.id}`))}
-                          >
-                            ✕
-                          </button>
-                        </li>
+                            />
+                            <textarea
+                              className="inline-title checklist-item-text"
+                              rows={1}
+                              defaultValue={item.text}
+                              ref={growTextarea}
+                              onInput={(event) => growTextarea(event.target)}
+                              onBlur={(event) => {
+                                const value = event.target.value.trim()
+                                if (value && value !== item.text) {
+                                  run(() => api.patch(`/checklist-items/${item.id}`, { text: value }))
+                                }
+                              }}
+                            />
+                            <button
+                              className="btn ghost small"
+                              type="button"
+                              title="Eliminar elemento"
+                              onClick={() => run(() => api.del(`/checklist-items/${item.id}`))}
+                            >
+                              <Icon name="x" size={14} />
+                            </button>
+                          </li>
+                        </Fragment>
                       ))}
+                      {dragGhost?.kind === 'item' &&
+                        itemHint?.checklistId === checklist.id &&
+                        itemHint.index >= checklist.items.length && (
+                          <li className="drag-insert-line item-line" aria-hidden="true" />
+                        )}
                     </ul>
 
                     <form
@@ -528,12 +976,18 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                         }
                       />
                       <button className="btn small" type="submit">
+                        <Icon name="plus" size={14} />
                         Añadir
                       </button>
                     </form>
                   </div>
+                  </Fragment>
                 )
               })}
+
+              {dragGhost?.kind === 'checklist' && checklistHint >= card.checklists.length && (
+                <div className="drag-insert-line" aria-hidden="true" />
+              )}
 
               <form
                 className="row"
@@ -551,6 +1005,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                   onChange={(event) => setNewChecklist(event.target.value)}
                 />
                 <button className="btn small" type="submit">
+                  <Icon name="list-plus" size={14} />
                   Añadir checklist
                 </button>
               </form>
@@ -558,7 +1013,10 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
 
             <section className="block">
               <div className="block-head">
-                <h3>Comentarios ({card.comments.length})</h3>
+                <h3>
+                  <Icon name="message" size={15} />
+                  Comentarios ({card.comments.length})
+                </h3>
               </div>
 
               <div className="comment-composer">
@@ -581,6 +1039,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                   />
                   <div className="row">
                     <button className="btn primary small" type="submit" disabled={busy || !commentDraft.trim()}>
+                      <Icon name="message" size={14} />
                       Comentar
                     </button>
                     {commentDraft && (
@@ -589,6 +1048,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                         type="button"
                         onClick={() => setCommentDraft('')}
                       >
+                        <Icon name="eraser" size={14} />
                         Limpiar
                       </button>
                     )}
@@ -635,6 +1095,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                                   setEditingComment(null)
                                 }}
                               >
+                                <Icon name="save" size={14} />
                                 Guardar
                               </button>
                               <button
@@ -642,6 +1103,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                                 type="button"
                                 onClick={() => setEditingComment(null)}
                               >
+                                <Icon name="x" size={14} />
                                 Cancelar
                               </button>
                             </div>
@@ -660,6 +1122,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                                 setCommentEditDraft(comment.body)
                               }}
                             >
+                              <Icon name="pencil" size={14} />
                               Editar
                             </button>
                             <button
@@ -667,6 +1130,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                               type="button"
                               onClick={() => run(() => api.del(`/comments/${comment.id}`))}
                             >
+                              <Icon name="trash" size={14} />
                               Eliminar
                             </button>
                           </div>
@@ -682,7 +1146,10 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
 
           <aside className="card-modal-side">
             <div className="side-block">
-              <span className="meta-label">Miembros</span>
+              <span className="meta-label">
+                <Icon name="users" size={13} />
+                Miembros
+              </span>
               <div className="stack">
                 {board.members.map((member) => (
                   <label key={member.id} className="check-row">
@@ -705,12 +1172,13 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
             </div>
 
             <div className="side-block">
-              <span className="meta-label">Mover a lista</span>
+              <span className="meta-label">
+                <Icon name="arrow-right" size={13} />
+                Mover a lista
+              </span>
               <select
                 value={card.listId}
-                onChange={(event) =>
-                  patch({ listId: event.target.value, targetIndex: 0 })
-                }
+                onChange={(event) => patch({ listId: event.target.value, targetIndex: 0 })}
               >
                 {board.lists.map((list) => (
                   <option key={list.id} value={list.id}>
@@ -721,31 +1189,46 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
             </div>
 
             <div className="side-block">
-              <span className="meta-label">Acciones</span>
+              <span className="meta-label">
+                <Icon name="zap" size={13} />
+                Acciones
+              </span>
               <div className="stack">
                 <button
                   className="btn small"
                   type="button"
                   onClick={() => patch({ archived: !card.archived })}
                 >
+                  <Icon name={card.archived ? 'archive-restore' : 'archive'} size={14} />
                   {card.archived ? 'Restaurar tarjeta' : 'Archivar tarjeta'}
                 </button>
                 <button
                   className="btn small danger"
                   type="button"
-                  onClick={async () => {
-                    if (!window.confirm('¿Eliminar esta tarjeta definitivamente?')) return
-                    await run(() => api.del(`/cards/${card.id}`))
-                    onClose()
-                  }}
+                  onClick={() => setConfirmDelete(true)}
                 >
+                  <Icon name="trash" size={14} />
                   Eliminar tarjeta
                 </button>
               </div>
             </div>
 
             <div className="side-block">
-              <span className="meta-label">Actividad</span>
+              <span className="meta-label">
+                <Icon name="history" size={13} />
+                Actividad de la tarjeta
+              </span>
+              <ActivityFeed
+                entries={card.activity}
+                empty="Todavía no hay actividad en esta tarjeta."
+              />
+            </div>
+
+            <div className="side-block">
+              <span className="meta-label">
+                <Icon name="history" size={13} />
+                Fechas
+              </span>
               <p className="muted small">Creada el {formatDateTime(card.createdAt)}</p>
               <p className="muted small">Actualizada el {formatDateTime(card.updatedAt)}</p>
             </div>
@@ -753,5 +1236,31 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
         </div>
       </div>
     </div>
+
+    {confirmDelete && (
+      <ConfirmDialog
+        title="Eliminar tarjeta"
+        message={`¿Eliminar la tarjeta «${cleanTitle(card.title)}» definitivamente?`}
+        confirmLabel="Eliminar tarjeta"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          setConfirmDelete(false)
+          await run(() => api.del(`/cards/${card.id}`))
+          onClose()
+        }}
+      />
+    )}
+
+    {dragGhost && (
+      <div
+        className={`drag-ghost ${dragGhost.kind}`}
+        style={{ left: dragGhost.x + 14, top: dragGhost.y + 14 }}
+        aria-hidden="true"
+      >
+        <Icon name="grip-vertical" size={12} />
+        <span>{dragGhost.label}</span>
+      </div>
+    )}
+    </>
   )
 }

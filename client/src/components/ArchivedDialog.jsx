@@ -1,4 +1,5 @@
 import { api } from '../api.js'
+import Icon from './Icon.jsx'
 
 export default function ArchivedDialog({ board, onClose, onBoardChange }) {
   async function restoreCard(card) {
@@ -16,8 +17,8 @@ export default function ArchivedDialog({ board, onClose, onBoardChange }) {
       <div className="modal narrow" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <h2>Elementos archivados</h2>
-          <button className="btn ghost small" type="button" onClick={onClose}>
-            ✕
+          <button className="btn ghost small" type="button" onClick={onClose} title="Cerrar" aria-label="Cerrar">
+            <Icon name="x" size={15} />
           </button>
         </div>
 

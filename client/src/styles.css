@@ -15,6 +15,21 @@
   --shadow-md: 0 10px 24px rgba(4, 7, 12, 0.45);
   --shadow-lg: 0 30px 70px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
+
+  /* Área segura del dispositivo (isla, indicador de inicio, esquinas curvas). */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /* Alto real de la ventana: 100vh miente en iOS con la app instalada. */
+  --app-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-height: 100dvh;
+  }
 }
 
 * {
@@ -28,7 +43,14 @@ body,
   margin: 0;
 }
 
+/* El lienzo de fondo va en el documento: así ninguna zona de la pantalla del
+   iPad queda sin pintar (franjas negras). */
+html {
+  background-color: var(--bg);
+}
+
 body {
+  min-height: 100%;
   background: radial-gradient(1200px 700px at 15% -15%, #1a2338 0%, var(--bg) 55%) fixed;
   color: var(--text);
   font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
@@ -257,7 +279,9 @@ select:focus {
   border-color: rgba(217, 83, 74, 0.6);
 }
 
-.btn.block {
+/* Ojo: «wide», no «block»: .block ya es el contenedor de secciones de un modal,
+   y al compartir nombre el botón heredaba su maquetación en columna. */
+.btn.wide {
   width: 100%;
 }
 
@@ -404,44 +428,58 @@ select:focus {
   background: var(--surface-3);
 }
 
+/*
+ * Paleta serena: cada color define --tone, que usan las etiquetas (translúcidas)
+ * y los swatches. Los fondos sólidos se reservan para portadas y barras.
+ */
 .bg-green {
-  background: #2fa36b;
-  color: #eafff4;
+  --tone: #4f9f7a;
+  background: var(--tone);
+  color: #e9f7ef;
 }
 .bg-yellow {
-  background: #c9a227;
+  --tone: #b3944f;
+  background: var(--tone);
   color: #241d00;
 }
 .bg-orange {
-  background: #d1802c;
+  --tone: #c07e4e;
+  background: var(--tone);
   color: #2a1400;
 }
 .bg-red {
-  background: #c0483f;
+  --tone: #b8595a;
+  background: var(--tone);
   color: #ffe9e6;
 }
 .bg-purple {
-  background: #7d5bd6;
+  --tone: #8f7ad0;
+  background: var(--tone);
   color: #f3edff;
 }
 .bg-blue {
-  background: #3f6fd1;
+  --tone: #5b7fca;
+  background: var(--tone);
   color: #e8f0ff;
 }
 .bg-sky {
-  background: #3aa6c9;
-  color: #04212b;
+  --tone: #4c9fbe;
+  background: var(--tone);
+  color: #eaf6fb;
 }
 .bg-lime {
-  background: #7cb342;
+  --tone: #8aa257;
+  background: var(--tone);
   color: #12240a;
 }
 .bg-pink {
-  background: #c2559c;
+  --tone: #b06fa0;
+  background: var(--tone);
   color: #ffeaf6;
 }
 .bg-gray {
-  background: #5c6675;
+  --tone: #6d7789;
+  background: var(--tone);
   color: #e8ecf3;
 }
 
@@ -455,6 +493,17 @@ select:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Etiqueta translúcida: el color tiñe el fondo en lugar de llenarlo, para que
+ * diez etiquetas juntas no saturen la tarjeta. Si el navegador no entiende
+ * color-mix, se queda el fondo sólido de .bg-*.
+ */
+.label-chip[class*='bg-'] {
+  background: color-mix(in srgb, var(--tone) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 40%, transparent);
+  color: color-mix(in srgb, var(--tone) 78%, #ffffff);
 }
 
 .label-chips {
@@ -616,6 +665,22 @@ select:focus {
   flex: 0 0 auto;
 }
 
+/* Versión de la aplicación, discreta en la esquina inferior derecha. */
+.app-version {
+  position: fixed;
+  right: 12px;
+  bottom: 8px;
+  z-index: 4;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  user-select: none;
+}
+
 .topbar-right {
   display: flex;
   align-items: center;
@@ -628,10 +693,17 @@ select:focus {
   margin: 0 auto;
 }
 
+/* El tablero maestro ocupa todo el ancho, igual que el lienzo de un tablero. */
+.boards-main.boards-main-wide {
+  max-width: none;
+}
+
 .section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 16px;
 }
 
@@ -694,6 +766,187 @@ select:focus {
   align-items: center;
   justify-content: space-between;
   margin-top: 14px;
+}
+
+.section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/*
+ * Vista Kanban de la página de tableros: un «tablero maestro». Las columnas
+ * son iguales que las listas de un tablero y se desplazan en horizontal.
+ */
+.boards-kanban {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 12px;
+  padding-bottom: 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.boards-kanban-column {
+  width: 284px;
+  flex: 0 0 284px;
+  background: rgba(26, 32, 48, 0.86);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 140px;
+  max-height: calc(var(--app-height) - 150px);
+  box-shadow: 0 12px 30px rgba(4, 7, 12, 0.35);
+}
+
+.boards-kanban-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 4px;
+}
+
+.boards-kanban-head h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.92rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.boards-kanban-head h3:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lane-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
+.lane-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.lane-actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.lane-actions button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.lane-rename {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lane-rename input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+}
+
+.boards-kanban-add {
+  width: 284px;
+  flex: 0 0 284px;
+  min-width: 0;
+}
+
+.boards-kanban-add-button {
+  width: 100%;
+  min-height: 48px;
+  justify-content: flex-start;
+  border-style: dashed;
+  background: rgba(26, 32, 48, 0.35);
+  color: var(--muted);
+}
+
+.boards-kanban-add-button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: #3d4a63;
+}
+
+.boards-kanban-add .lane-rename {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  background: rgba(26, 32, 48, 0.86);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.boards-kanban-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 2px;
+  min-height: 40px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.boards-kanban-cards .board-tile {
+  width: 100%;
+  cursor: grab;
+  -webkit-user-drag: element;
+}
+
+.boards-kanban-cards .board-tile:active {
+  cursor: grabbing;
+}
+
+.boards-kanban-cards .board-tile.dragging {
+  opacity: 0.45;
+  transform: none;
+  box-shadow: none;
+  border-style: dashed;
+}
+
+/* Columna que recibe el tablero arrastrado: resalte estático, sin pulsos. */
+.boards-kanban-column.drop-target {
+  border-color: rgba(124, 160, 255, 0.55);
+  background: rgba(38, 48, 70, 0.92);
+  box-shadow: 0 0 0 1px rgba(124, 160, 255, 0.35), 0 12px 30px rgba(4, 7, 12, 0.35);
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.boards-kanban-empty {
+  margin: 4px 0;
+  padding: 14px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  text-align: center;
 }
 
 .bg-aurora {
@@ -864,7 +1117,7 @@ select:focus {
   flex-direction: column;
   gap: 8px;
   min-height: 140px;
-  max-height: calc(100vh - 190px);
+  max-height: calc(var(--app-height) - 150px);
   box-shadow: 0 12px 30px rgba(4, 7, 12, 0.35);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -882,6 +1135,7 @@ select:focus {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
   cursor: grab;
   padding: 2px 2px 4px;
 }
@@ -911,6 +1165,7 @@ select:focus {
   gap: 8px;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 2px;
   min-height: 48px;
   position: relative;
@@ -932,24 +1187,37 @@ select:focus {
 }
 
 .list-foot {
+  flex: 0 0 auto;
   border-top: 1px solid var(--border);
   padding-top: 8px;
 }
 
-.new-list .btn.plus {
-  width: 280px;
-  padding: 12px;
+/* La lista nueva se nombra en su sitio: una columna más al final del tablero. */
+.new-list-slot {
+  flex: 0 0 auto;
 }
 
-.new-list-form {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px;
+.new-list-slot .new-list-form {
+  min-height: 0;
+}
+
+.new-list-button {
+  width: 284px;
+  flex: 0 0 284px;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   gap: 8px;
-  width: 280px;
+  padding: 12px 14px;
+  min-height: 48px;
+  border-style: dashed;
+  background: rgba(26, 32, 48, 0.35);
+  color: var(--muted);
+}
+
+.new-list-button:hover {
+  color: var(--text);
+  border-color: #3d4a63;
 }
 
 .drop-indicator {
@@ -1048,7 +1316,7 @@ select:focus {
  * las tarjetas con fecha, con el color del estado (vencida, urgente, próxima) y
  * relleno verde en cuanto está completada.
  */
-.card-item .card-due-toggle {
+.due-toggle {
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
@@ -1065,31 +1333,31 @@ select:focus {
   cursor: pointer;
 }
 
-.card-item .card-due-toggle:hover {
+.due-toggle:hover {
   filter: brightness(1.35);
 }
 
-.card-item .card-due-toggle:focus-visible {
+.due-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.card-item .card-due-toggle.due-overdue {
+.due-toggle.due-overdue {
   border-color: #6d4bd8;
   color: #6d4bd8;
 }
 
-.card-item .card-due-toggle.due-urgent {
+.due-toggle.due-urgent {
   border-color: #c1433a;
   color: #c1433a;
 }
 
-.card-item .card-due-toggle.due-soon {
+.due-toggle.due-soon {
   border-color: #d1802c;
   color: #d1802c;
 }
 
-.card-item .card-due-toggle.due-complete {
+.due-toggle.due-complete {
   background: #2fa36b;
   border-color: #2fa36b;
   color: #fff;
@@ -1134,7 +1402,8 @@ select:focus {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 40px 16px;
+  padding: calc(26px + var(--safe-top)) calc(16px + var(--safe-right)) calc(26px + var(--safe-bottom))
+    calc(16px + var(--safe-left));
   overflow-y: auto;
   z-index: 60;
   animation: backdrop-in 0.16s ease-out;
@@ -1188,6 +1457,45 @@ select:focus {
 
 .modal.narrow {
   width: min(520px, 100%);
+}
+
+/* Confirmación de acciones destructivas, dentro de la app. */
+.confirm-backdrop {
+  align-items: center;
+  z-index: 90;
+}
+
+.confirm-dialog {
+  width: min(430px, 100%);
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.confirm-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(217, 83, 74, 0.16);
+  color: #f18d86;
+}
+
+.confirm-body h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.confirm-body p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  justify-content: center;
+  width: 100%;
+  margin-top: 4px;
 }
 
 .modal-head {
@@ -1357,12 +1665,29 @@ select:focus {
 
 .checklist-items .item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
 .checklist-items .item input[type='checkbox'] {
   width: auto;
+  margin-top: 6px;
+}
+
+/*
+ * El texto de un elemento crece con su contenido: se ve entero de un vistazo
+ * aunque sea largo, en lugar de quedar recortado en una sola línea.
+ */
+.checklist-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 6px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .checklist-items .item.done .inline-title {
@@ -1454,11 +1779,115 @@ select:focus {
   flex: 1 1 auto;
 }
 
+/* Cuadrícula de colores para las etiquetas. */
+.label-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/*
+ * Selector de color discreto: un botón con el color actual y un desplegable con
+ * la paleta. Cada tono se ve como un punto pequeño y mate, nunca saturado.
+ */
+.color-select {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.color-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 190px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.color-select-trigger:hover {
+  background: var(--surface-3);
+  border-color: #3a4762;
+}
+
+.color-select-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.45);
+}
+
+.color-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.color-dot {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--tone, var(--surface-3));
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.18),
+    0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+.color-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 190px;
+  padding: 6px;
+  background: var(--surface-elev);
+  border: 1px solid #3d4a66;
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: context-in 0.12s ease-out;
+}
+
+.color-select-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.color-select-option:hover,
+.color-select-option.selected {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.color-select-option .icon {
+  color: var(--accent);
+}
+
 /* -------------------------------------------------------------- markdown */
 
 .markdown {
   line-height: 1.55;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .markdown > *:first-child {
@@ -1526,23 +1955,68 @@ select:focus {
   color: var(--muted);
 }
 
+/* Las tablas anchas se desplazan en horizontal en vez de romper el modal. */
 .markdown table {
   border-collapse: collapse;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 8px 0;
 }
 
 .markdown th,
 .markdown td {
   border: 1px solid var(--border);
-  padding: 4px 8px;
+  padding: 5px 10px;
+  text-align: left;
+}
+
+.markdown th {
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 600;
 }
 
 .markdown img {
   max-width: 100%;
+  height: auto;
+  border-radius: 8px;
 }
 
 .markdown hr {
   border: none;
   border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+.markdown a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown del {
+  color: var(--muted);
+}
+
+/*
+ * Casillas de las listas de tareas: sin esto heredan el estilo de los campos de
+ * texto (ancho completo, fondo y relleno) y la vista previa se rompe.
+ */
+.markdown input[type='checkbox'] {
+  width: 13px;
+  height: 13px;
+  min-width: 13px;
+  margin: 0 6px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--accent);
+  vertical-align: -1px;
+}
+
+.markdown li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -18px;
 }
 
 /* -------------------------------------------------------------- calendario */
@@ -1643,6 +2117,25 @@ select:focus {
   opacity: 0.75;
 }
 
+/* Círculo de completar la fecha dentro del calendario */
+.calendar-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.calendar-chip-row .calendar-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.calendar-due-toggle {
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  font-size: 9px;
+}
+
 .calendar-chip.plain {
   background: var(--surface-3);
   color: var(--text);
@@ -1660,6 +2153,57 @@ select:focus {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+.calendar-head-tools {
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.calendar-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.calendar-day.drop-target {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.calendar-chip-row.dragging,
+.calendar-chip.dragging {
+  opacity: 0.45;
+}
+
+.calendar-chip-row {
+  user-select: none;
+}
+
+.calendar-drag-ghost {
+  position: fixed;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 5px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--surface-3);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.calendar-drag-ghost span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------------------------------------------------------------- responsive */
@@ -1714,7 +2258,8 @@ select:focus {
 
 .board-header {
   position: sticky;
-  top: 0;
+  /* Pegado por debajo de la barra de estado del iPad, no encima. */
+  top: var(--safe-top);
   z-index: 30;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(8, 11, 18, 0.42);
@@ -1766,14 +2311,14 @@ select:focus {
   padding-top: 6px;
 }
 
-.list-foot .btn.block {
+.list-foot .btn.wide {
   justify-content: flex-start;
   background: transparent;
   border-color: transparent;
   color: var(--muted);
 }
 
-.list-foot .btn.block:hover {
+.list-foot .btn.wide:hover {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
 }
@@ -1886,7 +2431,8 @@ select:focus {
     min-height: 80px;
   }
 
-  .list {
+  .list,
+  .new-list-button {
     width: 250px;
     flex: 0 0 250px;
   }
@@ -1920,7 +2466,7 @@ select:focus {
   width: 54px;
   flex: 0 0 54px;
   min-height: 0;
-  max-height: 70vh;
+  max-height: calc(var(--app-height) * 0.7);
   padding: 6px;
   gap: 6px;
 }
@@ -2223,43 +2769,115 @@ select:focus {
 
 /* --------------------------------------------------- búsqueda del tablero */
 
-.board-search {
-  position: sticky;
-  top: 8px;
-  z-index: 45;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(680px, calc(100% - 32px));
-  margin: 10px auto;
-  padding: 10px;
-  background: var(--surface-elev);
-  border: 1px solid #3d4a66;
-  border-radius: 12px;
-  box-shadow: var(--shadow-md);
-  animation: modal-in 0.16s ease-out;
+/*
+ * El buscador es un modal casi a pantalla completa: el texto y los filtros
+ * mandan, y las tarjetas que coinciden van apareciendo debajo en cuadrícula.
+ */
+.search-backdrop {
+  z-index: 70;
 }
 
-.board-search-row {
+.search-modal {
+  width: min(1120px, 100%);
+  height: min(86vh, 900px);
+  gap: 12px;
+}
+
+.search-modal-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.board-search .search-input {
+.search-modal-head .search-input {
   flex: 1 1 auto;
   width: auto;
   max-width: none;
   min-width: 0;
+  font-size: 1.02rem;
+  padding: 11px 14px;
 }
 
-.board-search .filter-bar {
+.search-modal-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.search-modal .filter-bar {
   background: rgba(0, 0, 0, 0.25);
 }
 
-.board-search-icon {
+.search-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 10px;
+  overflow-y: auto;
+  padding: 2px 2px 6px;
+  align-content: start;
+}
+
+.search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  text-align: left;
+  background: linear-gradient(180deg, #232c3f, #1e2636);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, transform 0.12s ease, background 0.15s ease;
+}
+
+.search-result:hover {
+  background: linear-gradient(180deg, #2b3549, #242d40);
+  border-color: #3d4a63;
+  transform: translateY(-1px);
+}
+
+.search-result:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.3);
+}
+
+.search-result-title {
   font-size: 0.9rem;
-  opacity: 0.85;
+  font-weight: 600;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.search-result-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.search-result-list {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.search-result-members {
+  margin-left: auto;
+}
+
+.search-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 24px 14px;
+  text-align: center;
 }
 
 
@@ -2354,8 +2972,12 @@ select:focus {
 body {
   /* El contenido respeta la isla/indicador del iPad cuando corre a pantalla
      completa desde el acceso directo; en navegador los valores son 0. */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
-    env(safe-area-inset-left);
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  /* En la app instalada la ventana es más alta que 100vh: sin esto queda una
+     franja sin pintar bajo el contenido, y arriba se monta con la barra. */
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  min-height: var(--app-height);
   -webkit-text-size-adjust: 100%;
   overscroll-behavior-y: none;
 }
@@ -2376,4 +2998,384 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------- edición en línea */
+
+/*
+ * Mientras se renombra una lista, su cabecera deja de comportarse como un
+ * asa de arrastre: así se puede arrastrar el ratón para seleccionar el texto.
+ */
+.list-head.editing {
+  cursor: text;
+}
+
+.list-head.editing:active {
+  cursor: text;
+}
+
+.card-item input,
+.card-item textarea,
+.list-head input,
+.list-head textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Iconos y etiquetas de las barras: pegados al texto, sin saltos de línea. */
+.icon {
+  flex: 0 0 auto;
+}
+
+.btn .icon,
+.popover .icon,
+.meta-label .icon,
+.modal-head .icon,
+.block-head .icon {
+  vertical-align: -2px;
+}
+
+.meta-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ------------------------------------------------ controles con iconos */
+
+.tab,
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.block-head h3,
+.checklist-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.color-dot.plain {
+  background: var(--surface-3);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+/* ------------------------------------------------- insignias de la tarjeta */
+
+/* El icono y el número de un checklist se leen en la misma línea. */
+.pill.checklist-badge {
+  gap: 3px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.pill.checklist-badge .icon {
+  align-self: center;
+}
+
+/* ------------------------------------------- arrastre dentro de la tarjeta */
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-handle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.item-handle {
+  margin-top: 3px;
+}
+
+.drag-insert-line {
+  height: 2px;
+  margin: 1px 0;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+}
+
+.checklist-items .drag-insert-line.item-line {
+  list-style: none;
+  margin: 2px 0;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  padding: 5px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--surface-3);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.drag-ghost span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------ cinta Markdown de la descripción */
+
+.desc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-2);
+}
+
+.desc-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.desc-tool:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.desc-tool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.desc-toolbar + textarea {
+  border-radius: 0 0 8px 8px;
+}
+
+/* -------------------------------------- encuadre de la portada de la tarjeta */
+
+.cover-position {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.cover-position-preview {
+  position: relative;
+  height: 92px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--surface-3);
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+.cover-position-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+}
+
+.cover-position-cell {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.cover-position-cell:hover {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+.cover-position-cell.active {
+  background: rgba(59, 130, 246, 0.38);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* ------------------------------------------------------------- historial */
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.activity-body {
+  min-width: 0;
+}
+
+.activity-body p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.activity-actor-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ animaciones */
+
+@keyframes item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes list-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes lane-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ghost-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) rotate(-1deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes drop-line-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.card-item {
+  animation: item-enter 0.22s ease-out;
+}
+
+.list {
+  animation: list-enter 0.24s ease-out;
+}
+
+.boards-kanban-column {
+  animation: lane-enter 0.24s ease-out;
+}
+
+.drop-indicator,
+.drag-insert-line {
+  animation: drop-line-in 0.16s ease-out;
+}
+
+.drag-ghost,
+.calendar-drag-ghost {
+  animation: ghost-in 0.16s ease-out;
+}
+
+.confirm-dialog {
+  animation: pop-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+
+.popover {
+  animation: pop-in 0.14s ease-out;
+}
+
+.btn:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
 }

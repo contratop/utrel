@@ -1,3 +1,5 @@
+export const APP_VERSION = '1.0'
+
 export const BOARD_BACKGROUNDS = ['aurora', 'ocean', 'sunset', 'forest', 'berry', 'graphite']
 
 export const BOARD_BACKGROUND_NAMES = {
@@ -35,17 +37,19 @@ export const LABEL_COLOR_NAMES = {
   gray: 'Gris',
 }
 
+// Paleta serena: tonos desaturados que se leen bien sobre el fondo oscuro y
+// conviven sin gritar (el color de cada etiqueta es el mismo en toda la app).
 export const LABEL_COLOR_HEX = {
-  green: '#2fa36b',
-  yellow: '#c9a227',
-  orange: '#d1802c',
-  red: '#c0483f',
-  purple: '#7d5bd6',
-  blue: '#3f6fd1',
-  sky: '#3aa6c9',
-  lime: '#7cb342',
-  pink: '#c2559c',
-  gray: '#5c6675',
+  green: '#4f9f7a',
+  yellow: '#b3944f',
+  orange: '#c07e4e',
+  red: '#b8595a',
+  purple: '#8f7ad0',
+  blue: '#5b7fca',
+  sky: '#4c9fbe',
+  lime: '#8aa257',
+  pink: '#b06fa0',
+  gray: '#6d7789',
 }
 
 export const PRIORITIES = ['urgent', 'high', 'medium', 'low', 'none']

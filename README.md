@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Fair--Source%20%2F%20Non--Commercial-blue.svg" alt="Licencia No Comercial" /></a>
-  <img src="https://img.shields.io/badge/Tests-76%20passing-brightgreen.svg" alt="76 tests pasando" />
+  <img src="https://img.shields.io/badge/Tests-105%20passing-brightgreen.svg" alt="105 tests pasando" />
   <img src="https://img.shields.io/badge/Docker-GHCR%20Ready-2496ED?logo=docker&logoColor=white" alt="Docker GHCR" />
   <img src="https://img.shields.io/badge/Node-%3E%3D20.19-green.svg?logo=node.js" alt="Node >= 20.19" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black" alt="React 19" />
@@ -38,27 +38,41 @@ Es una aplicación de gestión de proyectos y tableros Kanban construida desde c
 ## ✨ Características Principales
 
 ### 📋 Tableros y Columnas
-- **Múltiples tableros por usuario** con archivo y papelera de recuperación.
+- **Múltiples tableros por usuario** con papelera de elementos archivados (listas y tarjetas) y dos vistas: **Normal** (cuadrícula de portadas) o **Kanban**, donde cada tablero es una tarjeta. Las columnas del Kanban son tuyas: añade, renombra, reordena o elimina columnas (hasta 8) y mueve cada tablero entre ellas; se guardan por usuario.
 - **Fondos personalizables:** Elige entre degradados integrados, sube tus propias imágenes (PNG, JPEG, WebP, GIF, AVIF hasta 8 MB) o enlaza una URL remota con previsualización en vivo.
 - **Color de lista personalizable (10 tonos):** Tiñe la columna entera con un degradado sutil y una barra de acento que respeta la legibilidad de las tarjetas.
 - **Límites WIP por lista (Work In Progress):** Fija un tope de tarjetas por columna. El contador te avisa visualmente: amarillo (≤ 3 huecos), rojo (límite alcanzado) y morado (límite superado), sin bloquear la creación de tareas.
+- **Añadir lista como una columna más:** El botón «Añadir lista» vive al final de las columnas, solo en la vista de tablero. Al pulsarlo, la lista que estás nombrando ocupa su sitio a la derecha —nunca una fila encima del lienzo— y no aparece en la vista de calendario.
+- **Buscador a pantalla completa:** «Buscar» abre un modal casi completo donde las tarjetas aparecen en cuadrícula mientras escribes, con los filtros de fecha, etiquetas y miembros dentro del propio buscador. Abrir un resultado lleva a su tarjeta; al cerrar se limpian los filtros para empezar de cero.
+- **Renombrado cómodo:** Mientras escribes el nombre de una lista, la columna deja de arrastrarse —puedes seleccionar el texto con el ratón— y Escape cancela el cambio sin guardarlo.
 - **Listas contraíbles:** Pliega cualquier columna en una tira vertical compacta con un solo clic. El estado se recuerda por dispositivo y usuario, y las listas plegadas siguen siendo zonas válidas para soltar tarjetas.
 - **Drag & Drop fluido y táctil:** Arrastra y suelta tarjetas y columnas tanto con ratón como con pulsación táctil prolongada en móviles y tablets, con autoscroll en los bordes y sin saltos bruscos de maquetación.
+- **Columnas adaptativas:** Las listas del tablero y las columnas del Kanban de tableros crecen con su contenido y se desplazan en horizontal, igual que en un tablero normal.
+- **Animaciones cuidadas:** Entrada suave de tarjetas y columnas, avisos de destino al arrastrar, líneas de inserción, diálogos y menús animados. Todo respeta `prefers-reduced-motion`.
 
 ### 🃏 Tarjetas y Flujo de Trabajo
-- **Edición enriquecida:** Título y descripción con soporte completo de GitHub Flavored Markdown (GFM) saneado con DOMPurify.
-- **Completado rápido de tareas:** Círculo interactivo directo en la tarjeta del tablero para marcar la fecha de vencimiento como completada al instante con un solo toque y sin abrir el modal.
+- **Edición enriquecida:** Título y descripción con soporte completo de GitHub Flavored Markdown (GFM) saneado con DOMPurify. Al editar la descripción, una cinta de opciones (negrita, cursiva, encabezados, listas, checklist, cita, código, enlace y separador) aplica el formato sobre la selección sin soltar el teclado. En el detalle, el título es de una sola línea (sin saltos) y admite como máximo 100 caracteres.
+- **Completado rápido de tareas:** Círculo interactivo directo en la tarjeta del tablero —y también en la vista de calendario— para marcar la fecha de vencimiento como completada al instante con un solo toque y sin abrir el modal.
 - **Fechas de vencimiento inteligentes:** Código de colores semafórico según la urgencia (vencida, urgente, próxima o completada).
-- **Checklists múltiples:** Crea varias listas de comprobación por tarjeta con barra de progreso y cálculo porcentual en tiempo real.
-- **Etiquetas y Portadas:** 10 colores de etiqueta, fondos de portada (color o imagen propia) y miembros asignados con su avatar.
+- **Checklists múltiples:** Crea varias listas de comprobación por tarjeta con barra de progreso y cálculo porcentual en tiempo real. Reordena las checklists con su asa y arrastra cualquier elemento dentro de su checklist o a otra de la misma tarjeta.
+- **Etiquetas y Portadas:** El color se elige en un desplegable discreto —una pastilla con el color actual y la paleta de 10 tonos al desplegarla— en vez de tener todas las muestras a la vista, fondos de portada (color o imagen propia) y miembros asignados con su avatar. Con una imagen de portada eliges su encuadre en una cuadrícula 3×3 (nueve posiciones) y la tarjeta muestra exactamente esa zona.
+- **Etiquetas desde el menú:** Crear, renombrar, recolorear o eliminar etiquetas vive en «Etiquetas…», dentro del menú de la derecha, para no saturar la barra superior.
+- **Checklists legibles:** El texto de cada elemento crece con su contenido, así que un paso largo se ve entero de un vistazo en lugar de quedar recortado.
+- **Edición sin pérdidas y sin salidas accidentales:** Al terminar de pulsar fuera de un campo en edición (título de tablero o de tarjeta, descripción, renombrar lista) los cambios se guardan; pero una selección de texto que acaba fuera del cuadro, o un clic en el primer instante, ya no descartan lo que estabas escribiendo. Con un editor abierto, Escape sale del campo (no de la tarjeta) y el primer clic en el fondo solo cierra el editor.
+- **Desplegables que se cierran solos:** Los menús de la barra superior y de cada lista, y el selector de color, se cierran al pulsar fuera de ellos o con Escape, sin dejar nada flotando en pantalla.
+- **Insignias en la tarjeta:** Cada tarjeta resume de un vistazo su prioridad, su fecha, si tiene descripción, su checklist (`hecho/total`) y sus comentarios, con icono y número en la misma línea.
+- **Iconos profesionales:** Toda la interfaz usa los iconos SVG de [Lucide](https://lucide.dev) (menús, tarjetas, diálogos) en lugar de emojis del sistema, con el mismo grosor de trazo en toda la app.
 - **Comentarios y Colaboración:** Hilo de discusión con Markdown, marcas de tiempo y avatares de usuario.
+- **Historial de actividad:** Cada tarjeta guarda las últimas 15 actualizaciones de sus miembros (quién asignó o quitó a quién) y el tablero conserva sus últimas 15 actualizaciones propias (nombre, fondo e incorporaciones o salidas de miembros), con autor y fecha.
 
 ### 📅 Vista de Calendario
 - Alterna entre el tablero Kanban tradicional y una cuadrícula mensual limpia donde las tarjetas se ordenan por su fecha de vencimiento.
 - Panel lateral para tarjetas sin fecha asignada y filtro para ocultar tareas completadas.
+- **Cambiar la fecha arrastrando:** Lleva cualquier tarjeta (con o sin fecha) a otro día de la cuadrícula para cambiar su vencimiento. Se conserva la hora que ya tenía.
 
 ### 🖱️ Menú Contextual Propio
-- Clic derecho personalizado tanto en tarjetas como en listas y fondo del tablero (abrir, archivar, renombrar, cambiar color, eliminar, etc.). Navegable mediante teclado con flechas y Enter, accesible y cerrable con Escape o scroll.
+- Clic derecho personalizado tanto en tarjetas como en listas y fondo del tablero (abrir, archivar, renombrar, cambiar color, eliminar, etc.), con icono en cada opción —también en los menús y en la edición de tarjetas—. Navegable mediante teclado con flechas y Enter, accesible y cerrable con Escape o scroll.
+- **Confirmaciones propias:** Borrar tableros, listas, tarjetas o cuentas abre un diálogo de la app (con Escape y clic fuera para cancelar), nunca un `window.confirm` del navegador.
 
 ### 🛠️ Administración de la Instancia (`/admin`)
 - **Primer usuario = Administrador:** La primera cuenta creada en una instalación limpia adquiere permisos de administrador automáticamente.
@@ -135,7 +149,7 @@ docker compose up -d --build
 | `PORT` | `4000` | Puerto HTTP donde escucha el servidor. |
 | `DATA_DIR` | `server/data` (en Docker: `/data`) | Directorio donde se almacenan la base de datos y los archivos. |
 | `DB_FILE` | `$DATA_DIR/utrel.db` | Ruta del archivo de base de datos SQLite. |
-| `UPLOADS_DIR` | `$DATA_DIR/uploads` | Carpeta para avatares y fotos de fondo de tableros y portadas. |
+| `UPLOADS_DIR` | `$DATA_DIR/uploads` | Carpeta para avatares, fondos y portadas (imágenes de hasta 8 MB). |
 | `CLIENT_DIST` | `client/dist` | Ruta donde se encuentran los archivos web compilados de React. |
 | `ALLOW_REGISTRATION` | `true` | Estado inicial del registro público. Una vez configurado en `/admin`, manda la base de datos. |
 | `COOKIE_SECURE` | `false` | Ponlo en `true` para requerir cookies seguras detrás de un proxy con HTTPS. |
@@ -164,9 +178,9 @@ npm run build
 npm test
 ```
 
-### 🧪 Cobertura de pruebas (76 tests automatizados)
-- **31 tests de Backend (`utrel-server`):** Pruebas contra un servidor Express real con base de datos SQLite efímera (autenticación con scrypt, cookies de sesión, permisos y pertenencia a tableros, límites WIP, subida de ficheros, flujo SSE y panel de administración).
-- **45 tests de Frontend (`utrel-client`):** Pruebas unitarias de cálculo de arrastre (DnD) y fechas, validación de manifest y PWA, y montaje completo de la aplicación compilada en `jsdom` (simulación de eventos SSE, clic derecho, contracción de listas y marcado directo de tarjetas).
+### 🧪 Cobertura de pruebas (105 tests automatizados)
+- **35 tests de Backend (`utrel-server`):** Pruebas contra un servidor Express real con base de datos SQLite efímera (autenticación con scrypt, cookies de sesión, permisos y pertenencia a tableros, límites WIP, reordenación de checklists y movimiento de elementos entre ellas, columnas Kanban por usuario, encuadre de portadas, historial de actividad con tope de 15, subida de imágenes, flujo SSE y panel de administración).
+- **70 tests de Frontend (`utrel-client`):** Pruebas unitarias de cálculo de arrastre (DnD), fechas, columnas personalizadas, validación de manifest, iconos y CSS de la PWA (área segura del iPad, alto real de la ventana), y montaje completo de la aplicación compilada en `jsdom` (simulación de eventos SSE, clic derecho, contracción y renombrado de listas, marcado directo de tarjetas, etiquetas en el menú de la derecha con selector de color discreto, buscador a pantalla completa con resultados, lista nueva como una columna más, vistas normal y Kanban con columnas editables, encuadre de portada, historial de tablero y tarjeta, cinta Markdown, arrastre de checklists y elementos, cambio de fecha en el calendario, texto largo de checklists, vista previa de Markdown, confirmaciones internas, cierre de los desplegables al pulsar fuera y cierre inteligente de los editores).
 
 ---
 

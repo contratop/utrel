@@ -141,7 +141,7 @@ export default function Login() {
 
               {error && <p className="form-error">{error}</p>}
 
-              <button className="btn primary block" type="submit" disabled={busy}>
+              <button className="btn primary wide" type="submit" disabled={busy}>
                 {busy ? 'Creando…' : 'Crear el administrador y entrar'}
               </button>
             </form>
@@ -220,7 +220,7 @@ export default function Login() {
 
               {error && <p className="form-error">{error}</p>}
 
-              <button className="btn primary block" type="submit" disabled={busy}>
+              <button className="btn primary wide" type="submit" disabled={busy}>
                 {busy ? 'Un momento…' : mode === 'login' ? 'Entrar' : 'Crear cuenta y entrar'}
               </button>
             </form>

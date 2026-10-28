@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { cardPayload } from '../payload.js'
 import {
+  COVER_POSITIONS,
   HttpError,
   LABEL_COLORS,
   PRIORITIES,
@@ -12,10 +13,13 @@ import {
   bool,
   imageRef,
   iso,
+  logActivity,
   maxPosition,
+  moveItem,
   notFound,
   optionalDate,
   reorderCard,
+  reorderChecklist,
   reorderItem,
   requireBoard,
   str,
@@ -49,6 +53,20 @@ export function cardRoutes(db) {
       `INSERT INTO cards (id, board_id, list_id, title, position, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(id, boardId, req.params.id, title, position, stamp, stamp)
+    logActivity(db, {
+      boardId,
+      cardId: id,
+      userId: req.user.id,
+      kind: 'card',
+      message: 'creó la tarjeta',
+    })
+    const list = db.prepare('SELECT title FROM lists WHERE id = ?').get(req.params.id)
+    logActivity(db, {
+      boardId,
+      userId: req.user.id,
+      kind: 'board',
+      message: `creó la tarjeta «${title}»${list ? ` en «${list.title}»` : ''}`,
+    })
     res.status(201).json({ card: cardPayload(db, id), board: boardId })
   })
 
@@ -84,6 +102,14 @@ export function cardRoutes(db) {
       coverColor = body.coverColor
     }
 
+    let coverPosition
+    if (body.coverPosition !== undefined) {
+      if (!COVER_POSITIONS.includes(body.coverPosition)) {
+        throw new HttpError(400, 'Posición de la imagen no válida')
+      }
+      coverPosition = body.coverPosition
+    }
+
     const coverImage = imageRef(body.coverImage, 'imagen de portada')
 
     db.prepare(
@@ -95,6 +121,7 @@ export function cardRoutes(db) {
          priority = COALESCE(?, priority),
          cover_color = CASE WHEN ? = 1 THEN ? ELSE cover_color END,
          cover_image = CASE WHEN ? = 1 THEN ? ELSE cover_image END,
+         cover_position = COALESCE(?, cover_position),
          archived = COALESCE(?, archived),
          updated_at = ?
        WHERE id = ?`
@@ -109,6 +136,7 @@ export function cardRoutes(db) {
       coverColor === undefined ? null : coverColor,
       coverImage === undefined ? 0 : 1,
       coverImage === undefined ? null : coverImage,
+      coverPosition ?? null,
       archived ?? null,
       iso(),
       req.params.id
@@ -124,12 +152,66 @@ export function cardRoutes(db) {
       reorderCard(db, req.params.id, card.list_id, body.targetIndex)
     }
 
+    const logCard = (message) =>
+      logActivity(db, {
+        boardId: card.board_id,
+        cardId: card.id,
+        userId: req.user.id,
+        kind: 'card',
+        message,
+      })
+    const logBoard = (message) =>
+      logActivity(db, {
+        boardId: card.board_id,
+        userId: req.user.id,
+        kind: 'board',
+        message,
+      })
+
+    if (title !== undefined && title !== card.title) {
+      logCard(`cambió el título a «${title}»`)
+    }
+    if (description !== undefined && description !== card.description) {
+      logCard('actualizó la descripción')
+    }
+    if (dueDate !== undefined && dueDate !== card.due_date) {
+      logCard(dueDate === null ? 'quitó la fecha de vencimiento' : 'cambió la fecha de vencimiento')
+    }
+    if (dueComplete !== undefined && dueComplete !== card.due_complete) {
+      logCard(dueComplete ? 'marcó la fecha como completada' : 'desmarcó la fecha completada')
+    }
+    if (priority !== undefined && priority !== card.priority) {
+      logCard('cambió la prioridad')
+    }
+    if (
+      (coverColor !== undefined && coverColor !== card.cover_color) ||
+      (coverImage !== undefined && coverImage !== card.cover_image) ||
+      (coverPosition !== undefined && coverPosition !== (card.cover_position || 'center'))
+    ) {
+      logCard('cambió la portada')
+    }
+    if (archived !== undefined && archived !== card.archived) {
+      logCard(archived ? 'archivó la tarjeta' : 'restauró la tarjeta')
+      logBoard(`${archived ? 'archivó' : 'restauró'} la tarjeta «${card.title}»`)
+    }
+    if (body.listId !== undefined && body.listId !== card.list_id) {
+      const list = db.prepare('SELECT title FROM lists WHERE id = ?').get(body.listId)
+      logCard(`movió la tarjeta a «${list ? list.title : 'otra lista'}»`)
+      logBoard(`movió la tarjeta «${card.title}» a «${list ? list.title : 'otra lista'}»`)
+    }
+
     res.json({ card: cardPayload(db, req.params.id) })
   })
 
   router.delete('/cards/:id', (req, res) => {
     const card = getCard(req.params.id)
     requireBoard(db, req.user.id, card.board_id)
+    logActivity(db, {
+      boardId: card.board_id,
+      userId: req.user.id,
+      kind: 'board',
+      message: `eliminó la tarjeta «${card.title}»`,
+    })
     db.prepare('DELETE FROM cards WHERE id = ?').run(req.params.id)
     res.json({ ok: true })
   })
@@ -142,20 +224,39 @@ export function cardRoutes(db) {
     const labelId = str((req.body || {}).labelId, 'labelId', { required: true })
     const label = db.prepare('SELECT * FROM labels WHERE id = ? AND board_id = ?').get(labelId, card.board_id)
     if (!label) notFound('Etiqueta no encontrada en este tablero')
-    db.prepare('INSERT OR IGNORE INTO card_labels (card_id, label_id) VALUES (?, ?)').run(
-      req.params.id,
-      labelId
-    )
+    const added = db
+      .prepare('INSERT OR IGNORE INTO card_labels (card_id, label_id) VALUES (?, ?)')
+      .run(req.params.id, labelId)
+    if (added.changes > 0) {
+      logActivity(db, {
+        boardId: card.board_id,
+        cardId: card.id,
+        userId: req.user.id,
+        kind: 'card',
+        message: `añadió la etiqueta «${label.name || label.color}»`,
+      })
+    }
     res.status(201).json({ card: cardPayload(db, req.params.id) })
   })
 
   router.delete('/cards/:id/labels/:labelId', (req, res) => {
     const card = getCard(req.params.id)
     requireBoard(db, req.user.id, card.board_id)
-    db.prepare('DELETE FROM card_labels WHERE card_id = ? AND label_id = ?').run(
-      req.params.id,
-      req.params.labelId
-    )
+    const label = db
+      .prepare('SELECT name, color FROM labels WHERE id = ? AND board_id = ?')
+      .get(req.params.labelId, card.board_id)
+    const removed = db
+      .prepare('DELETE FROM card_labels WHERE card_id = ? AND label_id = ?')
+      .run(req.params.id, req.params.labelId)
+    if (removed.changes > 0 && label) {
+      logActivity(db, {
+        boardId: card.board_id,
+        cardId: card.id,
+        userId: req.user.id,
+        kind: 'card',
+        message: `quitó la etiqueta «${label.name || label.color}»`,
+      })
+    }
     res.json({ card: cardPayload(db, req.params.id) })
   })
 
@@ -169,20 +270,38 @@ export function cardRoutes(db) {
       .prepare('SELECT 1 FROM board_members WHERE board_id = ? AND user_id = ?')
       .get(card.board_id, userId)
     if (!isMember) throw new HttpError(400, 'Ese usuario no pertenece al tablero')
-    db.prepare('INSERT OR IGNORE INTO card_members (card_id, user_id) VALUES (?, ?)').run(
-      req.params.id,
-      userId
-    )
+    const assigned = db
+      .prepare('INSERT OR IGNORE INTO card_members (card_id, user_id) VALUES (?, ?)')
+      .run(req.params.id, userId)
+    if (assigned.changes > 0) {
+      const target = db.prepare('SELECT username FROM users WHERE id = ?').get(userId)
+      logActivity(db, {
+        boardId: card.board_id,
+        cardId: card.id,
+        userId: req.user.id,
+        kind: 'card_member',
+        message: `asignó a @${target.username} a la tarjeta`,
+      })
+    }
     res.status(201).json({ card: cardPayload(db, req.params.id) })
   })
 
   router.delete('/cards/:id/members/:userId', (req, res) => {
     const card = getCard(req.params.id)
     requireBoard(db, req.user.id, card.board_id)
-    db.prepare('DELETE FROM card_members WHERE card_id = ? AND user_id = ?').run(
-      req.params.id,
-      req.params.userId
-    )
+    const removed = db
+      .prepare('DELETE FROM card_members WHERE card_id = ? AND user_id = ?')
+      .run(req.params.id, req.params.userId)
+    if (removed.changes > 0) {
+      const target = db.prepare('SELECT username FROM users WHERE id = ?').get(req.params.userId)
+      logActivity(db, {
+        boardId: card.board_id,
+        cardId: card.id,
+        userId: req.user.id,
+        kind: 'card_member',
+        message: `quitó a @${target.username} de la tarjeta`,
+      })
+    }
     res.json({ card: cardPayload(db, req.params.id) })
   })
 
@@ -203,25 +322,52 @@ export function cardRoutes(db) {
       title,
       position
     )
+    logActivity(db, {
+      boardId: card.board_id,
+      cardId: card.id,
+      userId: req.user.id,
+      kind: 'card',
+      message: `añadió el checklist «${title}»`,
+    })
     res.status(201).json({ card: cardPayload(db, req.params.id) })
   })
 
   router.patch('/checklists/:id', (req, res) => {
     const boardId = boardIdOfChecklist(db, req.params.id)
     requireBoard(db, req.user.id, boardId)
-    const title = str((req.body || {}).title, 'título', { max: 120 })
+    const body = req.body || {}
+    const title = str(body.title, 'título', { max: 120 })
+    const row = db
+      .prepare('SELECT card_id, title FROM checklists WHERE id = ?')
+      .get(req.params.id)
     if (title !== undefined) {
       db.prepare('UPDATE checklists SET title = ? WHERE id = ?').run(title, req.params.id)
+      if (title !== row.title) {
+        logActivity(db, {
+          boardId,
+          cardId: row.card_id,
+          userId: req.user.id,
+          kind: 'card',
+          message: `renombró el checklist «${row.title}» a «${title}»`,
+        })
+      }
     }
-    const cardId = db.prepare('SELECT card_id FROM checklists WHERE id = ?').get(req.params.id)
-    res.json({ card: cardPayload(db, cardId.card_id) })
+    if (body.targetIndex !== undefined) reorderChecklist(db, req.params.id, body.targetIndex)
+    res.json({ card: cardPayload(db, row.card_id) })
   })
 
   router.delete('/checklists/:id', (req, res) => {
     const boardId = boardIdOfChecklist(db, req.params.id)
     requireBoard(db, req.user.id, boardId)
-    const row = db.prepare('SELECT card_id FROM checklists WHERE id = ?').get(req.params.id)
+    const row = db.prepare('SELECT card_id, title FROM checklists WHERE id = ?').get(req.params.id)
     db.prepare('DELETE FROM checklists WHERE id = ?').run(req.params.id)
+    logActivity(db, {
+      boardId,
+      cardId: row.card_id,
+      userId: req.user.id,
+      kind: 'card',
+      message: `eliminó el checklist «${row.title}»`,
+    })
     res.json({ card: cardPayload(db, row.card_id) })
   })
 
@@ -237,7 +383,16 @@ export function cardRoutes(db) {
     db.prepare(
       'INSERT INTO checklist_items (id, checklist_id, text, position, created_at) VALUES (?, ?, ?, ?, ?)'
     ).run(uid(), req.params.id, text, position, iso())
-    const row = db.prepare('SELECT card_id FROM checklists WHERE id = ?').get(req.params.id)
+    const row = db
+      .prepare('SELECT card_id, title FROM checklists WHERE id = ?')
+      .get(req.params.id)
+    logActivity(db, {
+      boardId,
+      cardId: row.card_id,
+      userId: req.user.id,
+      kind: 'card',
+      message: `añadió un elemento al checklist «${row.title}»`,
+    })
     res.status(201).json({ card: cardPayload(db, row.card_id) })
   })
 
@@ -248,26 +403,77 @@ export function cardRoutes(db) {
     const text = str(body.text, 'texto', { max: 500 })
     const done = bool(body.done, 'done')
 
+    const row = db
+      .prepare('SELECT checklist_id, text, done FROM checklist_items WHERE id = ?')
+      .get(req.params.id)
+    if (!row) notFound('Elemento no encontrado')
+    const checklist = db
+      .prepare('SELECT card_id, title FROM checklists WHERE id = ?')
+      .get(row.checklist_id)
+
+    // Solo se admiten movimientos dentro de la misma tarjeta: el detalle se
+    // recarga como un todo y mezclar tarjetas dejaría la vista a medias.
+    let targetChecklistId
+    if (body.checklistId !== undefined) {
+      if (typeof body.checklistId !== 'string') {
+        throw new HttpError(400, 'El campo "checklistId" debe ser texto')
+      }
+      const target = db.prepare('SELECT card_id FROM checklists WHERE id = ?').get(body.checklistId)
+      if (!target) notFound('Checklist de destino no encontrado')
+      if (target.card_id !== checklist.card_id) {
+        throw new HttpError(400, 'Solo puedes mover elementos entre checklists de la misma tarjeta')
+      }
+      targetChecklistId = body.checklistId
+    }
+
     db.prepare('UPDATE checklist_items SET text = COALESCE(?, text), done = COALESCE(?, done) WHERE id = ?').run(
       text ?? null,
       done ?? null,
       req.params.id
     )
-    if (body.targetIndex !== undefined) reorderItem(db, req.params.id, body.targetIndex)
+    if (targetChecklistId !== undefined) moveItem(db, req.params.id, targetChecklistId, body.targetIndex)
+    else if (body.targetIndex !== undefined) reorderItem(db, req.params.id, body.targetIndex)
 
-    const row = db
-      .prepare('SELECT checklist_id FROM checklist_items WHERE id = ?')
-      .get(req.params.id)
-    const checklist = db.prepare('SELECT card_id FROM checklists WHERE id = ?').get(row.checklist_id)
+    const logCard = (message) =>
+      logActivity(db, {
+        boardId,
+        cardId: checklist.card_id,
+        userId: req.user.id,
+        kind: 'card',
+        message,
+      })
+    if (targetChecklistId !== undefined && targetChecklistId !== row.checklist_id) {
+      const target = db.prepare('SELECT title FROM checklists WHERE id = ?').get(targetChecklistId)
+      logCard(`movió un elemento a «${target ? target.title : 'otro checklist'}»`)
+    } else if (text !== undefined && text !== row.text) {
+      logCard(`editó un elemento del checklist «${checklist.title}»`)
+    }
+    if (done !== undefined && done !== row.done) {
+      logCard(
+        `${done ? 'completó' : 'desmarcó'} un elemento del checklist «${checklist.title}»`
+      )
+    }
+
     res.json({ card: cardPayload(db, checklist.card_id) })
   })
 
   router.delete('/checklist-items/:id', (req, res) => {
     const boardId = boardIdOfItem(db, req.params.id)
     requireBoard(db, req.user.id, boardId)
-    const row = db.prepare('SELECT checklist_id FROM checklist_items WHERE id = ?').get(req.params.id)
-    const checklist = db.prepare('SELECT card_id FROM checklists WHERE id = ?').get(row.checklist_id)
+    const row = db
+      .prepare('SELECT checklist_id, text FROM checklist_items WHERE id = ?')
+      .get(req.params.id)
+    const checklist = db
+      .prepare('SELECT card_id, title FROM checklists WHERE id = ?')
+      .get(row.checklist_id)
     db.prepare('DELETE FROM checklist_items WHERE id = ?').run(req.params.id)
+    logActivity(db, {
+      boardId,
+      cardId: checklist.card_id,
+      userId: req.user.id,
+      kind: 'card',
+      message: `eliminó un elemento del checklist «${checklist.title}»`,
+    })
     res.json({ card: cardPayload(db, checklist.card_id) })
   })
 
@@ -282,6 +488,13 @@ export function cardRoutes(db) {
       'INSERT INTO comments (id, card_id, user_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(uid(), req.params.id, req.user.id, bodyText, stamp, stamp)
     db.prepare('UPDATE cards SET updated_at = ? WHERE id = ?').run(stamp, req.params.id)
+    logActivity(db, {
+      boardId: card.board_id,
+      cardId: card.id,
+      userId: req.user.id,
+      kind: 'card',
+      message: 'comentó en la tarjeta',
+    })
     res.status(201).json({ card: cardPayload(db, req.params.id) })
   })
 
@@ -296,6 +509,13 @@ export function cardRoutes(db) {
       iso(),
       req.params.id
     )
+    logActivity(db, {
+      boardId,
+      cardId: comment.card_id,
+      userId: req.user.id,
+      kind: 'card',
+      message: 'editó un comentario',
+    })
     res.json({ card: cardPayload(db, comment.card_id) })
   })
 
@@ -307,6 +527,13 @@ export function cardRoutes(db) {
       throw new HttpError(403, 'Solo el autor o el propietario del tablero pueden borrar el comentario')
     }
     db.prepare('DELETE FROM comments WHERE id = ?').run(req.params.id)
+    logActivity(db, {
+      boardId,
+      cardId: comment.card_id,
+      userId: req.user.id,
+      kind: 'card',
+      message: 'eliminó un comentario',
+    })
     res.json({ card: cardPayload(db, comment.card_id) })
   })
 

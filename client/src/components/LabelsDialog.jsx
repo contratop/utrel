@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { api } from '../api.js'
-import { LABEL_COLORS, LABEL_COLOR_NAMES } from '../lib/constants.js'
+import Icon from './Icon.jsx'
+import ColorSelect from './ColorSelect.jsx'
+import { LABEL_COLORS } from '../lib/constants.js'
 
 export default function LabelsDialog({ board, onClose, onBoardChange }) {
   const [form, setForm] = useState({ name: '', color: LABEL_COLORS[0] })
@@ -21,8 +23,8 @@ export default function LabelsDialog({ board, onClose, onBoardChange }) {
       <div className="modal narrow" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <h2>Etiquetas del tablero</h2>
-          <button className="btn ghost small" type="button" onClick={onClose}>
-            ✕
+          <button className="btn ghost small" type="button" onClick={onClose} title="Cerrar" aria-label="Cerrar">
+            <Icon name="x" size={15} />
           </button>
         </div>
 
@@ -31,31 +33,31 @@ export default function LabelsDialog({ board, onClose, onBoardChange }) {
         <div className="stack">
           {board.labels.map((label) => (
             <div key={label.id} className="label-row">
-              <span className={`label-chip bg-${label.color}`}>{LABEL_COLOR_NAMES[label.color]}</span>
               <input
                 defaultValue={label.name}
                 placeholder="Nombre de la etiqueta"
+                aria-label={`Nombre de la etiqueta ${label.name}`}
                 onBlur={(event) => {
                   const name = event.target.value.trim()
                   if (name !== label.name) run(() => api.patch(`/labels/${label.id}`, { name }))
                 }}
               />
-              <select
+              <ColorSelect
+                label={`Color de ${label.name || 'la etiqueta'}`}
+                title="Color de la etiqueta"
                 value={label.color}
-                onChange={(event) => run(() => api.patch(`/labels/${label.id}`, { color: event.target.value }))}
-              >
-                {LABEL_COLORS.map((color) => (
-                  <option key={color} value={color}>
-                    {LABEL_COLOR_NAMES[color]}
-                  </option>
-                ))}
-              </select>
+                onPick={(color) => {
+                  if (color && color !== label.color) run(() => api.patch(`/labels/${label.id}`, { color }))
+                }}
+              />
               <button
                 className="btn ghost small"
                 type="button"
+                title={`Eliminar «${label.name}»`}
+                aria-label={`Eliminar la etiqueta ${label.name}`}
                 onClick={() => run(() => api.del(`/labels/${label.id}`))}
               >
-                ✕
+                <Icon name="trash" size={14} />
               </button>
             </div>
           ))}
@@ -73,16 +75,16 @@ export default function LabelsDialog({ board, onClose, onBoardChange }) {
         >
           <input
             placeholder="Nueva etiqueta"
+            aria-label="Nombre de la nueva etiqueta"
             value={form.name}
             onChange={(event) => setForm({ ...form, name: event.target.value })}
           />
-          <select value={form.color} onChange={(event) => setForm({ ...form, color: event.target.value })}>
-            {LABEL_COLORS.map((color) => (
-              <option key={color} value={color}>
-                {LABEL_COLOR_NAMES[color]}
-              </option>
-            ))}
-          </select>
+          <ColorSelect
+            label="Color de la nueva etiqueta"
+            title="Color de la nueva etiqueta"
+            value={form.color}
+            onPick={(color) => setForm({ ...form, color: color || LABEL_COLORS[0] })}
+          />
           <button className="btn primary small" type="submit">
             Añadir
           </button>

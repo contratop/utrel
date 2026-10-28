@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
+import Icon from './Icon.jsx'
 import { boardArtwork } from '../lib/backgrounds.js'
 import { BOARD_BACKGROUNDS, BOARD_BACKGROUND_NAMES } from '../lib/constants.js'
 
@@ -51,7 +52,7 @@ export default function BoardBackgroundDialog({ board, onApply, onClose }) {
           <h2>Fondo del tablero</h2>
           <div className="modal-head-actions">
             <button className="btn ghost small" type="button" onClick={onClose} title="Cerrar (Esc)">
-              ✕
+              <Icon name="x" size={15} />
             </button>
           </div>
         </div>
@@ -96,6 +97,11 @@ export default function BoardBackgroundDialog({ board, onApply, onClose }) {
           </p>
           <div className="row wrap">
             <label className={`btn small${uploading ? ' disabled' : ''}`}>
+              <Icon
+                name={uploading ? 'loader' : 'image'}
+                size={14}
+                className={uploading ? 'spin' : ''}
+              />
               {uploading ? 'Subiendo…' : 'Subir imagen'}
               <input
                 type="file"
