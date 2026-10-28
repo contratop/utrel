@@ -7,8 +7,9 @@ import ColorSelect from './ColorSelect.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { Markdown } from '../lib/markdown.jsx'
 import { dropIndexFromRects, serverIndexFor } from '../lib/dnd.js'
-import { COVER_POSITION_OPTIONS, coverImageStyle } from '../lib/backgrounds.js'
+import { COVER_POSITION_OPTIONS, cardCover, coverImageStyle } from '../lib/backgrounds.js'
 import { LABEL_COLOR_NAMES, PRIORITIES, PRIORITY_LABEL } from '../lib/constants.js'
+import { isYoutubeLink, linkHost } from '../lib/links.js'
 import { useBackdropPress, useDismissOnOutside } from '../lib/editing.js'
 import {
   dueStatus,
@@ -32,6 +33,28 @@ function growTextarea(node) {
   node.style.height = `${node.scrollHeight}px`
 }
 
+/** Favicon del enlace; en YouTube se muestra el icono del servicio. */
+function LinkFavicon({ link }) {
+  const [failed, setFailed] = useState(false)
+  if (isYoutubeLink(link.url)) {
+    return <Icon name="youtube" size={15} className="youtube-icon" title="YouTube" />
+  }
+  if (link.icon && !failed) {
+    return (
+      <img
+        className="link-favicon"
+        src={link.icon}
+        alt=""
+        width={16}
+        height={16}
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    )
+  }
+  return <Icon name="link" size={14} />
+}
+
 export default function CardDetail({ cardId, board, currentUser, onClose, onBoardChange }) {
   const [card, setCard] = useState(null)
   const [error, setError] = useState('')
@@ -49,6 +72,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
   const [busy, setBusy] = useState(false)
   const [coverUrl, setCoverUrl] = useState('')
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [linkDraft, setLinkDraft] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [dragGhost, setDragGhost] = useState(null)
   const [checklistHint, setChecklistHint] = useState(null)
@@ -396,6 +420,25 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
   // había un editor abierto, el primer clic se limita a cerrarlo.
   const backdrop = useBackdropPress(() => onClose())
 
+  /** Guarda el enlace y espera a que el servidor cargue sus metadatos. */
+  async function loadLink(event) {
+    event.preventDefault()
+    const value = linkDraft.trim()
+    if (!value || !card) return
+    setBusy(true)
+    try {
+      const data = await api.patch(`/cards/${card.id}`, { link: value })
+      if (data && data.card) setCard(data.card)
+      setLinkDraft('')
+      onBoardChange?.()
+      setError('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function uploadCover(event) {
     const file = event.target.files && event.target.files[0]
     event.target.value = ''
@@ -430,6 +473,7 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
   const cardLabelIds = new Set(card.labels.map((label) => label.id))
 
   const coverStyle = coverImageStyle(card)
+  const cover = cardCover(card)
 
   return (
     <>
@@ -440,13 +484,13 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
       onClick={backdrop.onClick}
     >
       <div
-        className={`modal card-modal${coverStyle || card.coverColor ? ' has-cover' : ''}`}
+        className={`modal card-modal${cover ? ' has-cover' : ''}`}
         onClick={(event) => event.stopPropagation()}
       >
-        {(coverStyle || card.coverColor) && (
+        {cover && (
           <div
-            className={`card-modal-cover${coverStyle ? ' image' : ` bg-${card.coverColor}`}`}
-            style={coverStyle || undefined}
+            className={`card-modal-cover${cover.kind === 'image' ? ' image' : ` bg-${cover.color}`}`}
+            style={cover.kind === 'image' ? cover.style : undefined}
           />
         )}
         <div className="modal-head">
@@ -746,6 +790,125 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                   ))}
               </div>
             </div>
+
+            <section className="block" data-card-link>
+              <div className="block-head">
+                <h3>
+                  <Icon name="link" size={15} />
+                  Enlace
+                </h3>
+                {isYoutubeLink(card.link?.url) && (
+                  <span className="pill youtube-pill">
+                    <Icon name="youtube" size={12} />
+                    YouTube
+                  </span>
+                )}
+              </div>
+
+              {card.link ? (
+                <>
+                  <div className="link-preview">
+                    {card.link.image && (
+                      <a
+                        className="link-preview-thumb"
+                        href={card.link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={card.link.title || card.link.url}
+                      >
+                        <img src={card.link.image} alt="" loading="lazy" />
+                      </a>
+                    )}
+                    <div className="link-preview-body">
+                      <span className="link-preview-site">
+                        <LinkFavicon link={card.link} />
+                        {card.link.site || linkHost(card.link.url)}
+                      </span>
+                      <a
+                        className="link-preview-title"
+                        href={card.link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {card.link.title || card.link.url}
+                      </a>
+                      <span className="link-preview-url" title={card.link.url}>
+                        {card.link.url}
+                      </span>
+                      <div className="row wrap">
+                        <a
+                          className="btn ghost small"
+                          href={card.link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Icon name="arrow-up-right" size={14} />
+                          Abrir
+                        </a>
+                        {card.link.image && (
+                          <button
+                            className="btn ghost small"
+                            type="button"
+                            disabled={busy || card.coverImage === card.link.image}
+                            onClick={() => patch({ coverImage: card.link.image, coverColor: null })}
+                          >
+                            <Icon
+                              name={card.coverImage === card.link.image ? 'check' : 'image'}
+                              size={14}
+                            />
+                            {card.coverImage === card.link.image
+                              ? 'Banner establecido'
+                              : 'Establecer banner'}
+                          </button>
+                        )}
+                        <button
+                          className="btn ghost small"
+                          type="button"
+                          disabled={busy}
+                          onClick={() => run(() => api.patch(`/cards/${card.id}`, { link: card.link.url }))}
+                        >
+                          <Icon name="history" size={14} />
+                          Actualizar datos
+                        </button>
+                        <button
+                          className="btn ghost small"
+                          type="button"
+                          disabled={busy}
+                          onClick={() => run(() => api.patch(`/cards/${card.id}`, { link: null }))}
+                        >
+                          <Icon name="trash" size={14} />
+                          Quitar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {isYoutubeLink(card.link.url) && (
+                    <p className="muted small">
+                      El vídeo se usa como portada y su título como título de la tarjeta.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="muted small">
+                  Carga el título, el favicon y la miniatura del enlace. En YouTube, el vídeo pasa a ser
+                  la portada y su título, el de la tarjeta.
+                </p>
+              )}
+
+              <form className="row" onSubmit={loadLink}>
+                <input
+                  placeholder={
+                    card.link ? 'Pega otro enlace para reemplazarlo' : 'https://ejemplo.com/articulo'
+                  }
+                  value={linkDraft}
+                  onChange={(event) => setLinkDraft(event.target.value)}
+                />
+                <button className="btn small" type="submit" disabled={busy || !linkDraft.trim()}>
+                  <Icon name="link" size={14} />
+                  {card.link ? 'Reemplazar' : 'Cargar enlace'}
+                </button>
+              </form>
+            </section>
 
             <section className="block">
               <div className="block-head">

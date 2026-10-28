@@ -176,7 +176,7 @@ test('con sesión, el bundle lista los tableros del usuario', { skip }, async ()
   assert.match(html, /3 listas · 5 tarjetas/)
   assert.match(html, /2 vencidas/)
   assert.match(html, /src="\/brand\/utrel-mark\.svg"/, 'la barra superior usa el isotipo de la marca')
-  assert.match(html, /app-version[^>]*>v1\.0</, 'la versión de la aplicación se muestra de forma discreta')
+  assert.match(html, /app-version[^>]*>v1\.1</, 'la versión de la aplicación se muestra de forma discreta')
   assert.deepEqual(app.calls, ['GET /api/auth/me', 'GET /api/boards'])
 })
 
@@ -2070,4 +2070,142 @@ test('los desplegables del tablero se cierran al pulsar fuera', { skip }, async 
   release(inside)
   await new Promise((resolve) => setTimeout(resolve, 40))
   assert.ok(doc.querySelector('[data-list-id="l1"] .popover'), 'pulsar dentro no cierra el menú')
+})
+
+test('un enlace de YouTube muestra el icono, la miniatura y su vista previa', { skip }, async () => {
+  const link = {
+    url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    title: 'Vídeo de prueba',
+    image: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    icon: 'https://www.youtube.com/favicon.ico',
+    site: 'YouTube',
+  }
+  const linked = {
+    ...BOARD.lists[0].cards[0],
+    title: 'Vídeo de prueba',
+    coverColor: null,
+    link,
+  }
+  const board = {
+    ...BOARD,
+    lists: [{ ...BOARD.lists[0], cards: [linked] }, BOARD.lists[1]],
+  }
+  const detail = {
+    ...linked,
+    listTitle: 'Por hacer',
+    checklists: [],
+    comments: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+
+  const app = await mount(
+    {
+      'GET /api/auth/me': {
+        status: 200,
+        body: { user: { id: 'u1', username: 'ana', name: 'Ana', email: 'ana@example.com' } },
+      },
+      'GET /api/boards/b1': { status: 200, body: board },
+      'GET /api/cards/c1': { status: 200, body: { card: detail } },
+      'PATCH /api/cards/c1': {
+        status: 200,
+        body: {
+          card: {
+            ...detail,
+            link: {
+              url: 'https://ejemplo.com/articulo',
+              title: 'Artículo de ejemplo',
+              image: 'https://ejemplo.com/portada.jpg',
+              icon: 'https://ejemplo.com/favicon.ico',
+              site: 'Ejemplo',
+            },
+          },
+        },
+      },
+    },
+    '/b/b1'
+  )
+
+  await app.waitFor(/Vídeo de prueba/)
+  const doc = app.window.document
+  const card = doc.querySelector('[data-card-id="c1"]')
+  assert.ok(card.querySelector('.youtube-badge'), 'la tarjeta muestra el icono de YouTube')
+  const cover = card.querySelector('.card-cover.image')
+  assert.ok(cover, 'la miniatura del vídeo es la portada')
+  assert.match(cover.getAttribute('style') || '', /hqdefault\.jpg/)
+
+  card.click()
+  await app.waitFor(/link-preview/)
+  const linkBlock = doc.querySelector('[data-card-link]')
+  assert.ok(linkBlock, 'la sección Enlace está en el detalle')
+  assert.match(linkBlock.textContent, /YouTube/)
+  assert.equal(linkBlock.querySelector('.link-preview-title').textContent, 'Vídeo de prueba')
+  assert.equal(linkBlock.querySelector('.link-preview-thumb img').getAttribute('src'), link.image)
+  assert.equal(linkBlock.querySelector('.youtube-pill').textContent.trim(), 'YouTube')
+
+  // Cambiar el enlace vuelve a pedir los metadatos al servidor.
+  setInputValue(app.window, linkBlock.querySelector('form input'), 'https://ejemplo.com/articulo')
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  clickByText(app.window, 'Reemplazar')
+  await waitForCall(app, 'PATCH /api/cards/c1')
+  assert.deepEqual(app.payloads.at(-1).body, { link: 'https://ejemplo.com/articulo' })
+  await app.waitFor(/Artículo de ejemplo/)
+  assert.equal(
+    doc.querySelector('[data-card-link] .link-preview-title').textContent,
+    'Artículo de ejemplo'
+  )
+
+  // La imagen capturada se puede fijar como banner de la tarjeta.
+  const updatedBlock = doc.querySelector('[data-card-link]')
+  const banner = [...updatedBlock.querySelectorAll('button')].find((button) =>
+    button.textContent.includes('Establecer banner')
+  )
+  assert.ok(banner, 'la vista previa ofrece establecer la imagen como banner')
+  banner.click()
+  await waitForCallCount(app, 'PATCH /api/cards/c1', 2)
+  assert.deepEqual(app.payloads.at(-1).body, {
+    coverImage: 'https://ejemplo.com/portada.jpg',
+    coverColor: null,
+  })
+})
+
+test('archivar todas las tarjetas de una lista pide confirmación', { skip }, async () => {
+  const emptyBoard = {
+    ...BOARD,
+    lists: [{ ...BOARD.lists[0], cards: [] }, BOARD.lists[1]],
+  }
+
+  const app = await mount(
+    {
+      'GET /api/auth/me': {
+        status: 200,
+        body: { user: { id: 'u1', username: 'ana', name: 'Ana', email: 'ana@example.com' } },
+      },
+      'GET /api/boards/b1': { status: 200, body: BOARD },
+      'POST /api/lists/l1/cards/archive': { status: 200, body: emptyBoard },
+    },
+    '/b/b1'
+  )
+
+  await app.waitFor(/Diseñar portada/)
+  const doc = app.window.document
+
+  assert.ok(rightClick(app.window, doc.querySelector('[data-list-id="l1"]')).defaultPrevented)
+  const menu = await app.waitFor(/Archivar todas las tarjetas/)
+  assert.match(menu, /Archivar todas las tarjetas/)
+  clickMenuItem(app.window, 'Archivar todas las tarjetas')
+
+  await app.waitFor(/confirm-dialog/)
+  const dialog = doc.querySelector('.confirm-dialog')
+  assert.match(dialog.textContent, /la única tarjeta/)
+  assert.match(dialog.textContent, /«Por hacer»/)
+
+  clickByText(app.window, 'Archivar tarjetas')
+  await waitForCall(app, 'POST /api/lists/l1/cards/archive')
+
+  const deadline = Date.now() + 2000
+  while (Date.now() < deadline && doc.querySelector('[data-card-id="c1"]')) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  assert.ok(!doc.querySelector('[data-card-id="c1"]'), 'la tarjeta sale del tablero')
 })

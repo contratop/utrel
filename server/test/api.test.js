@@ -10,7 +10,26 @@ import { changeForRequest } from '../src/live.js'
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utrel-test-'))
 const uploadsDir = path.join(tmpDir, 'uploads')
 const db = createDb(path.join(tmpDir, 'test.db'))
-const app = createApp({ db, uploadsDir })
+
+// la vista previa de enlaces se sustituye por datos fijos para no salir a la red
+const LINK_PREVIEWS = {
+  'https://www.youtube.com/watch?v=dQw4w9WgXcQ': {
+    title: 'Nunca te rindas',
+    image: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    icon: 'https://www.youtube.com/favicon.ico',
+    site: 'YouTube',
+  },
+  'https://ejemplo.com/articulo': {
+    title: 'Guía de ejemplo',
+    image: 'https://ejemplo.com/portada.jpg',
+    icon: 'https://ejemplo.com/favicon.ico',
+    site: 'Ejemplo',
+  },
+}
+const previewLink = async (url) =>
+  LINK_PREVIEWS[url] || { title: '', image: null, icon: null, site: 'ejemplo.test' }
+
+const app = createApp({ db, uploadsDir, previewLink })
 
 let server
 let base
@@ -168,6 +187,126 @@ test('crear tarjeta y editar sus campos', async () => {
     body: { coverPosition: 'diagonal' },
   })
   assert.equal(invalidPosition.status, 400)
+})
+
+test('el enlace de una tarjeta carga metadatos y el título del vídeo', async () => {
+  const created = await req('POST', `/api/lists/${state.listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Vídeo pendiente' },
+  })
+  const cardId = created.data.card.id
+
+  // YouTube: el título del vídeo pasa a ser el de la tarjeta.
+  const youtube = await req('PATCH', `/api/cards/${cardId}`, {
+    cookie: state.cookieA,
+    body: { link: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+  })
+  assert.equal(youtube.status, 200)
+  assert.equal(youtube.data.card.title, 'Nunca te rindas')
+  assert.deepEqual(youtube.data.card.link, {
+    url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    title: 'Nunca te rindas',
+    image: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    icon: 'https://www.youtube.com/favicon.ico',
+    site: 'YouTube',
+  })
+
+  // Cualquier otro enlace: metadatos sí, título de la tarjeta no. La URL sin
+  // protocolo se normaliza a https.
+  const web = await req('PATCH', `/api/cards/${cardId}`, {
+    cookie: state.cookieA,
+    body: { link: 'ejemplo.com/articulo' },
+  })
+  assert.equal(web.status, 200)
+  assert.equal(web.data.card.link.url, 'https://ejemplo.com/articulo')
+  assert.equal(web.data.card.title, 'Nunca te rindas')
+  assert.equal(web.data.card.link.title, 'Guía de ejemplo')
+  assert.equal(web.data.card.link.image, 'https://ejemplo.com/portada.jpg')
+  assert.equal(web.data.card.link.icon, 'https://ejemplo.com/favicon.ico')
+  assert.equal(web.data.card.link.site, 'Ejemplo')
+
+  const board = await req('GET', `/api/boards/${state.boardId}`, { cookie: state.cookieA })
+  const inBoard = board.data.lists.flatMap((list) => list.cards).find((card) => card.id === cardId)
+  assert.equal(inBoard.link.title, 'Guía de ejemplo', 'el tablero también recibe la vista previa')
+
+  const invalid = await req('PATCH', `/api/cards/${cardId}`, {
+    cookie: state.cookieA,
+    body: { link: 'ftp://ejemplo.com/archivo' },
+  })
+  assert.equal(invalid.status, 400)
+
+  const removed = await req('PATCH', `/api/cards/${cardId}`, {
+    cookie: state.cookieA,
+    body: { link: null },
+  })
+  assert.equal(removed.status, 200)
+  assert.equal(removed.data.card.link, null)
+
+  await req('DELETE', `/api/cards/${cardId}`, { cookie: state.cookieA })
+})
+
+test('crear una tarjeta con un enlace carga nombre, banner y enlace', async () => {
+  const youtube = await req('POST', `/api/lists/${state.listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+  })
+  assert.equal(youtube.status, 201)
+  assert.equal(youtube.data.card.title, 'Nunca te rindas')
+  assert.equal(youtube.data.card.link.url, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+  assert.equal(youtube.data.card.coverImage, 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg')
+
+  const web = await req('POST', `/api/lists/${state.listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'ejemplo.com/articulo' },
+  })
+  assert.equal(web.status, 201)
+  assert.equal(web.data.card.title, 'Guía de ejemplo')
+  assert.equal(web.data.card.link.url, 'https://ejemplo.com/articulo')
+  assert.equal(web.data.card.coverImage, 'https://ejemplo.com/portada.jpg')
+
+  const normal = await req('POST', `/api/lists/${state.listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Revisar versión 1.2' },
+  })
+  assert.equal(normal.status, 201)
+  assert.equal(normal.data.card.title, 'Revisar versión 1.2')
+  assert.equal(normal.data.card.link, null)
+  assert.equal(normal.data.card.coverImage, null)
+
+  // Un título con punto (un nombre de archivo o de producto) no es un enlace.
+  const filename = await req('POST', `/api/lists/${state.listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Node.js' },
+  })
+  assert.equal(filename.data.card.link, null)
+  assert.equal(filename.data.card.title, 'Node.js')
+
+  for (const card of [youtube.data.card, web.data.card, normal.data.card, filename.data.card]) {
+    await req('DELETE', `/api/cards/${card.id}`, { cookie: state.cookieA })
+  }
+})
+
+test('archivar todas las tarjetas de una lista', async () => {
+  const created = await req('POST', `/api/boards/${state.boardId}/lists`, {
+    cookie: state.cookieA,
+    body: { title: 'Para archivar' },
+  })
+  const listId = created.data.lists.find((list) => list.title === 'Para archivar').id
+  for (const title of ['Primera', 'Segunda']) {
+    await req('POST', `/api/lists/${listId}/cards`, { cookie: state.cookieA, body: { title } })
+  }
+
+  const archived = await req('POST', `/api/lists/${listId}/cards/archive`, { cookie: state.cookieA })
+  assert.equal(archived.status, 200)
+  assert.equal(archived.data.lists.find((list) => list.id === listId).cards.length, 0)
+  const titles = archived.data.archivedCards.map((card) => card.title)
+  assert.ok(titles.includes('Primera'))
+  assert.ok(titles.includes('Segunda'))
+
+  const again = await req('POST', `/api/lists/${listId}/cards/archive`, { cookie: state.cookieA })
+  assert.equal(again.status, 200, 'una lista ya vacía no falla')
+
+  await req('DELETE', `/api/lists/${listId}`, { cookie: state.cookieA })
 })
 
 test('checklist con progreso en el payload del tablero', async () => {

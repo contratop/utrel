@@ -87,6 +87,15 @@ function shapeCard(card, { labels, members, checklist, commentCount }) {
     coverColor: card.cover_color,
     coverImage: card.cover_image,
     coverPosition: card.cover_position || 'center',
+    link: card.link
+      ? {
+          url: card.link,
+          title: card.link_title || '',
+          image: card.link_image || null,
+          icon: card.link_icon || null,
+          site: card.link_site || '',
+        }
+      : null,
     position: card.position,
     archived: !!card.archived,
     createdAt: card.created_at,

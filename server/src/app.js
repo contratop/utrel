@@ -14,6 +14,7 @@ export function createApp({
   db,
   uploadsDir = path.resolve('data/uploads'),
   live = createLiveHub(),
+  previewLink,
 }) {
   const app = express()
   app.disable('x-powered-by')
@@ -49,7 +50,7 @@ export function createApp({
   api.use('/', requireAuth, uploadRoutes(uploadsDir))
   api.use('/', requireAuth, liveRoutes(db, live))
   api.use('/', requireAuth, boardRoutes(db))
-  api.use('/', requireAuth, cardRoutes(db))
+  api.use('/', requireAuth, cardRoutes(db, { previewLink }))
   app.use('/api', api)
 
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Ruta no encontrada')))

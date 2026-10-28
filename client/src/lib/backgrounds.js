@@ -1,4 +1,5 @@
 /** Utilidades para pintar fondos de tablero y portadas de tarjeta (predefinidos o con imagen). */
+import { isYoutubeLink } from './links.js'
 
 const cssUrl = (url) => `url("${String(url).replace(/["\\]/g, '')}")`
 
@@ -69,4 +70,25 @@ export function coverImageStyle(card) {
     backgroundSize: 'cover',
     backgroundPosition: COVER_POSITION_CSS[card?.coverPosition] || 'center',
   }
+}
+
+/**
+ * Portada visible de la tarjeta: la imagen propia y el color mandan; si no hay
+ * ninguno y el enlace es de YouTube, se usa la miniatura del vídeo.
+ */
+export function cardCover(card) {
+  const style = coverImageStyle(card)
+  if (style) return { kind: 'image', style }
+  if (card?.coverColor) return { kind: 'color', color: card.coverColor }
+  if (isYoutubeLink(card?.link?.url) && isCustomImage(card?.link?.image)) {
+    return {
+      kind: 'image',
+      style: {
+        backgroundImage: cssUrl(card.link.image),
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      },
+    }
+  }
+  return null
 }

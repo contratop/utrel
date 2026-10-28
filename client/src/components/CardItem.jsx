@@ -1,7 +1,8 @@
 import Avatar from './Avatar.jsx'
 import Icon from './Icon.jsx'
 import { PRIORITY_LABEL } from '../lib/constants.js'
-import { coverImageStyle } from '../lib/backgrounds.js'
+import { cardCover } from '../lib/backgrounds.js'
+import { isYoutubeLink } from '../lib/links.js'
 import { dueStatus, dueStatusLabel, formatDue } from '../lib/dueDate.js'
 
 export default function CardItem({
@@ -17,11 +18,11 @@ export default function CardItem({
   const status = dueStatus(card.dueDate, card.dueComplete)
   const hasChecklist = card.checklist.total > 0
   const checklistDone = hasChecklist && card.checklist.done === card.checklist.total
-  const coverStyle = coverImageStyle(card)
+  const cover = cardCover(card)
 
   return (
     <article
-      className={`card-item${dragging ? ' dragging' : ''}${coverStyle ? ' has-image' : ''}`}
+      className={`card-item${dragging ? ' dragging' : ''}${cover?.kind === 'image' ? ' has-image' : ''}`}
       data-card-id={card.id}
       draggable
       onDragStart={onDragStart}
@@ -34,8 +35,8 @@ export default function CardItem({
         if (event.key === 'Enter') onOpen()
       }}
     >
-      {coverStyle && <div className="card-cover image" style={coverStyle} />}
-      {!coverStyle && card.coverColor && <div className={`card-cover bg-${card.coverColor}`} />}
+      {cover?.kind === 'image' && <div className="card-cover image" style={cover.style} />}
+      {cover?.kind === 'color' && <div className={`card-cover bg-${cover.color}`} />}
 
       <div className="card-body">
         {card.labels.length > 0 && (
@@ -72,6 +73,11 @@ export default function CardItem({
         </div>
 
         <div className="card-badges">
+          {isYoutubeLink(card.link?.url) && (
+            <span className="icon-badge youtube-badge" title="Enlace de YouTube">
+              <Icon name="youtube" size={13} />
+            </span>
+          )}
           {card.priority !== 'none' && (
             <span
               className={`pill priority-${card.priority}`}

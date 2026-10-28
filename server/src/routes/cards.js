@@ -1,5 +1,6 @@
 import { Router } from 'express'
-import { cardPayload } from '../payload.js'
+import { fetchLinkPreview, linkFromText, normalizeLink, youtubeVideoId } from '../linkPreview.js'
+import { boardPayload, cardPayload } from '../payload.js'
 import {
   COVER_POSITIONS,
   HttpError,
@@ -26,7 +27,7 @@ import {
   uid,
 } from '../util.js'
 
-export function cardRoutes(db) {
+export function cardRoutes(db, { previewLink = fetchLinkPreview } = {}) {
   const router = Router()
 
   const getCard = (id) => {
@@ -37,11 +38,21 @@ export function cardRoutes(db) {
 
   // ----------------------------------------------------------------- tarjetas
 
-  router.post('/lists/:id/cards', (req, res) => {
+  router.post('/lists/:id/cards', async (req, res) => {
     const boardId = boardIdOfList(db, req.params.id)
     requireBoard(db, req.user.id, boardId)
     const body = req.body || {}
-    const title = str(body.title, 'título', { required: true, max: 500 })
+
+    // Si el título es un enlace, la tarjeta nace con sus metadatos: nombre de
+    // la página o vídeo, enlace y miniatura como banner.
+    const rawTitle = typeof body.title === 'string' ? body.title.trim() : ''
+    const link = linkFromText(rawTitle)
+    const preview = link ? await previewLink(link) : null
+    const title = link
+      ? preview && preview.title
+        ? preview.title.replace(/\s+/g, ' ').trim().slice(0, 100)
+        : rawTitle.slice(0, 500)
+      : str(body.title, 'título', { required: true, max: 500 })
     const position = maxPosition(
       db,
       'SELECT MAX(position) AS max_position FROM cards WHERE list_id = ?',
@@ -50,9 +61,26 @@ export function cardRoutes(db) {
     const id = uid()
     const stamp = iso()
     db.prepare(
-      `INSERT INTO cards (id, board_id, list_id, title, position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, boardId, req.params.id, title, position, stamp, stamp)
+      `INSERT INTO cards (
+         id, board_id, list_id, title, cover_image,
+         link, link_title, link_image, link_icon, link_site,
+         position, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      boardId,
+      req.params.id,
+      title,
+      link && preview && preview.image ? preview.image : null,
+      link,
+      link && preview && preview.title ? preview.title : null,
+      link && preview && preview.image ? preview.image : null,
+      link && preview && preview.icon ? preview.icon : null,
+      link && preview && preview.site ? preview.site : null,
+      position,
+      stamp,
+      stamp
+    )
     logActivity(db, {
       boardId,
       cardId: id,
@@ -76,12 +104,12 @@ export function cardRoutes(db) {
     res.json({ card: cardPayload(db, req.params.id) })
   })
 
-  router.patch('/cards/:id', (req, res) => {
+  router.patch('/cards/:id', async (req, res) => {
     const card = getCard(req.params.id)
     requireBoard(db, req.user.id, card.board_id)
     const body = req.body || {}
 
-    const title = str(body.title, 'título', { max: 500 })
+    let title = str(body.title, 'título', { max: 500 })
     const description =
       body.description === undefined ? undefined : str(body.description, 'descripción', { max: 20000 })
     const dueDate = optionalDate(body.dueDate, 'fecha de vencimiento')
@@ -112,6 +140,30 @@ export function cardRoutes(db) {
 
     const coverImage = imageRef(body.coverImage, 'imagen de portada')
 
+    let link
+    if (body.link !== undefined) {
+      link = body.link === null || body.link === '' ? null : normalizeLink(body.link)
+    }
+
+    // La vista previa se descarga antes de guardar: si el enlace es de YouTube,
+    // el título del vídeo pasa a ser el de la tarjeta.
+    let preview = null
+    if (link) {
+      preview = await previewLink(link)
+      if (youtubeVideoId(link) && preview && preview.title) {
+        title = preview.title.replace(/\s+/g, ' ').trim().slice(0, 100)
+      }
+    }
+    const linkMeta =
+      link === undefined
+        ? undefined
+        : {
+            title: link && preview && preview.title ? preview.title : null,
+            image: link && preview && preview.image ? preview.image : null,
+            icon: link && preview && preview.icon ? preview.icon : null,
+            site: link && preview && preview.site ? preview.site : null,
+          }
+
     db.prepare(
       `UPDATE cards SET
          title = COALESCE(?, title),
@@ -122,6 +174,11 @@ export function cardRoutes(db) {
          cover_color = CASE WHEN ? = 1 THEN ? ELSE cover_color END,
          cover_image = CASE WHEN ? = 1 THEN ? ELSE cover_image END,
          cover_position = COALESCE(?, cover_position),
+         link = CASE WHEN ? = 1 THEN ? ELSE link END,
+         link_title = CASE WHEN ? = 1 THEN ? ELSE link_title END,
+         link_image = CASE WHEN ? = 1 THEN ? ELSE link_image END,
+         link_icon = CASE WHEN ? = 1 THEN ? ELSE link_icon END,
+         link_site = CASE WHEN ? = 1 THEN ? ELSE link_site END,
          archived = COALESCE(?, archived),
          updated_at = ?
        WHERE id = ?`
@@ -137,6 +194,16 @@ export function cardRoutes(db) {
       coverImage === undefined ? 0 : 1,
       coverImage === undefined ? null : coverImage,
       coverPosition ?? null,
+      link === undefined ? 0 : 1,
+      link === undefined ? null : link,
+      linkMeta === undefined ? 0 : 1,
+      linkMeta ? linkMeta.title : null,
+      linkMeta === undefined ? 0 : 1,
+      linkMeta ? linkMeta.image : null,
+      linkMeta === undefined ? 0 : 1,
+      linkMeta ? linkMeta.icon : null,
+      linkMeta === undefined ? 0 : 1,
+      linkMeta ? linkMeta.site : null,
       archived ?? null,
       iso(),
       req.params.id
@@ -190,6 +257,9 @@ export function cardRoutes(db) {
     ) {
       logCard('cambió la portada')
     }
+    if (link !== undefined && link !== card.link) {
+      logCard(link ? 'añadió un enlace a la tarjeta' : 'quitó el enlace de la tarjeta')
+    }
     if (archived !== undefined && archived !== card.archived) {
       logCard(archived ? 'archivó la tarjeta' : 'restauró la tarjeta')
       logBoard(`${archived ? 'archivó' : 'restauró'} la tarjeta «${card.title}»`)
@@ -201,6 +271,30 @@ export function cardRoutes(db) {
     }
 
     res.json({ card: cardPayload(db, req.params.id) })
+  })
+
+  // Archiva de una vez todas las tarjetas de una lista.
+  router.post('/lists/:id/cards/archive', (req, res) => {
+    const boardId = boardIdOfList(db, req.params.id)
+    requireBoard(db, req.user.id, boardId)
+    const list = db.prepare('SELECT title FROM lists WHERE id = ?').get(req.params.id)
+    const cards = db
+      .prepare('SELECT id FROM cards WHERE list_id = ? AND archived = 0')
+      .all(req.params.id)
+
+    if (cards.length > 0) {
+      const stamp = iso()
+      const update = db.prepare('UPDATE cards SET archived = 1, updated_at = ? WHERE id = ?')
+      db.transaction(() => cards.forEach((card) => update.run(stamp, card.id)))()
+      logActivity(db, {
+        boardId,
+        userId: req.user.id,
+        kind: 'board',
+        message: `archivó ${cards.length === 1 ? 'la única tarjeta' : `las ${cards.length} tarjetas`} de la lista «${list.title}»`,
+      })
+    }
+
+    res.json(boardPayload(db, boardId))
   })
 
   router.delete('/cards/:id', (req, res) => {

@@ -247,8 +247,8 @@ export default function BoardPage() {
   }, [menuOpen, listMenu])
 
   /** Confirmación interna para las acciones destructivas (nada de window.confirm). */
-  function askConfirm({ title, message, confirmLabel = 'Eliminar', onConfirm }) {
-    setConfirmState({ title, message, confirmLabel, onConfirm })
+  function askConfirm({ title, message, confirmLabel = 'Eliminar', danger = true, onConfirm }) {
+    setConfirmState({ title, message, confirmLabel, danger, onConfirm })
   }
 
   // ----------------------------------------------------- menú contextual
@@ -322,6 +322,24 @@ export default function BoardPage() {
       },
     },
     { separator: true },
+    ...(list.cards.length > 0
+      ? [
+          {
+            label: 'Archivar todas las tarjetas',
+            icon: <Icon name="archive" />,
+            onSelect: () =>
+              askConfirm({
+                title: 'Archivar todas las tarjetas',
+                message: `¿Archivar ${
+                  list.cards.length === 1 ? 'la única tarjeta' : `las ${list.cards.length} tarjetas`
+                } de «${list.title}»? Podrás recuperarlas desde «Elementos archivados».`,
+                confirmLabel: 'Archivar tarjetas',
+                danger: false,
+                onConfirm: () => guarded(() => api.post(`/lists/${list.id}/cards/archive`)),
+              }),
+          },
+        ]
+      : []),
     {
       label: 'Archivar lista',
       icon: <Icon name="archive" />,
@@ -1075,6 +1093,7 @@ export default function BoardPage() {
           title={confirmState.title}
           message={confirmState.message}
           confirmLabel={confirmState.confirmLabel}
+          danger={confirmState.danger}
           onCancel={() => setConfirmState(null)}
           onConfirm={() => {
             const action = confirmState.onConfirm
@@ -1243,6 +1262,30 @@ export default function BoardPage() {
                             <Icon name="chevron-down" size={14} />
                             Contraer lista
                           </button>
+                          {list.cards.length > 0 && (
+                            <button
+                              className="btn ghost small"
+                              type="button"
+                              onClick={() => {
+                                setListMenu(null)
+                                askConfirm({
+                                  title: 'Archivar todas las tarjetas',
+                                  message: `¿Archivar ${
+                                    list.cards.length === 1
+                                      ? 'la única tarjeta'
+                                      : `las ${list.cards.length} tarjetas`
+                                  } de «${list.title}»? Podrás recuperarlas desde «Elementos archivados».`,
+                                  confirmLabel: 'Archivar tarjetas',
+                                  danger: false,
+                                  onConfirm: () =>
+                                    guarded(() => api.post(`/lists/${list.id}/cards/archive`)),
+                                })
+                              }}
+                            >
+                              <Icon name="archive" size={14} />
+                              Archivar todas las tarjetas
+                            </button>
+                          )}
                           <button
                             className="btn ghost small"
                             type="button"
@@ -1374,7 +1417,8 @@ export default function BoardPage() {
                       >
                         <textarea
                           rows={2}
-                          placeholder="Título de la tarjeta…"
+                          placeholder="Título de la tarjeta o enlace…"
+                          title="Si pegas un enlace, se cargan su título y su banner"
                           value={cardDraft}
                           onChange={(event) => setCardDraft(event.target.value)}
                           autoFocus

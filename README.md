@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Fair--Source%20%2F%20Non--Commercial-blue.svg" alt="Licencia No Comercial" /></a>
-  <img src="https://img.shields.io/badge/Tests-105%20passing-brightgreen.svg" alt="105 tests pasando" />
+  <img src="https://img.shields.io/badge/Tests-113%20passing-brightgreen.svg" alt="113 tests pasando" />
   <img src="https://img.shields.io/badge/Docker-GHCR%20Ready-2496ED?logo=docker&logoColor=white" alt="Docker GHCR" />
   <img src="https://img.shields.io/badge/Node-%3E%3D20.19-green.svg?logo=node.js" alt="Node >= 20.19" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black" alt="React 19" />
@@ -42,6 +42,7 @@ Es una aplicación de gestión de proyectos y tableros Kanban construida desde c
 - **Fondos personalizables:** Elige entre degradados integrados, sube tus propias imágenes (PNG, JPEG, WebP, GIF, AVIF hasta 8 MB) o enlaza una URL remota con previsualización en vivo.
 - **Color de lista personalizable (10 tonos):** Tiñe la columna entera con un degradado sutil y una barra de acento que respeta la legibilidad de las tarjetas.
 - **Límites WIP por lista (Work In Progress):** Fija un tope de tarjetas por columna. El contador te avisa visualmente: amarillo (≤ 3 huecos), rojo (límite alcanzado) y morado (límite superado), sin bloquear la creación de tareas.
+- **Archivado en bloque:** «Archivar todas las tarjetas» vacía una columna de una vez, con confirmación previa; todo se puede restaurar después desde «Elementos archivados».
 - **Añadir lista como una columna más:** El botón «Añadir lista» vive al final de las columnas, solo en la vista de tablero. Al pulsarlo, la lista que estás nombrando ocupa su sitio a la derecha —nunca una fila encima del lienzo— y no aparece en la vista de calendario.
 - **Buscador a pantalla completa:** «Buscar» abre un modal casi completo donde las tarjetas aparecen en cuadrícula mientras escribes, con los filtros de fecha, etiquetas y miembros dentro del propio buscador. Abrir un resultado lleva a su tarjeta; al cerrar se limpian los filtros para empezar de cero.
 - **Renombrado cómodo:** Mientras escribes el nombre de una lista, la columna deja de arrastrarse —puedes seleccionar el texto con el ratón— y Escape cancela el cambio sin guardarlo.
@@ -61,6 +62,7 @@ Es una aplicación de gestión de proyectos y tableros Kanban construida desde c
 - **Edición sin pérdidas y sin salidas accidentales:** Al terminar de pulsar fuera de un campo en edición (título de tablero o de tarjeta, descripción, renombrar lista) los cambios se guardan; pero una selección de texto que acaba fuera del cuadro, o un clic en el primer instante, ya no descartan lo que estabas escribiendo. Con un editor abierto, Escape sale del campo (no de la tarjeta) y el primer clic en el fondo solo cierra el editor.
 - **Desplegables que se cierran solos:** Los menús de la barra superior y de cada lista, y el selector de color, se cierran al pulsar fuera de ellos o con Escape, sin dejar nada flotando en pantalla.
 - **Insignias en la tarjeta:** Cada tarjeta resume de un vistazo su prioridad, su fecha, si tiene descripción, su checklist (`hecho/total`) y sus comentarios, con icono y número en la misma línea.
+- **Enlaces con vista previa:** Pega un enlace al crear una tarjeta y nace con el nombre de la página o del vídeo, el enlace y su miniatura como banner (en YouTube, además, con el icono del servicio). Cualquier tarjeta admite un enlace en su sección «Enlace», que carga título, favicon y miniatura —evitando redes privadas— y ofrece «Establecer banner» para usar la imagen capturada como portada.
 - **Iconos profesionales:** Toda la interfaz usa los iconos SVG de [Lucide](https://lucide.dev) (menús, tarjetas, diálogos) en lugar de emojis del sistema, con el mismo grosor de trazo en toda la app.
 - **Comentarios y Colaboración:** Hilo de discusión con Markdown, marcas de tiempo y avatares de usuario.
 - **Historial de actividad:** Cada tarjeta guarda las últimas 15 actualizaciones de sus miembros (quién asignó o quitó a quién) y el tablero conserva sus últimas 15 actualizaciones propias (nombre, fondo e incorporaciones o salidas de miembros), con autor y fecha.
@@ -178,9 +180,9 @@ npm run build
 npm test
 ```
 
-### 🧪 Cobertura de pruebas (105 tests automatizados)
-- **35 tests de Backend (`utrel-server`):** Pruebas contra un servidor Express real con base de datos SQLite efímera (autenticación con scrypt, cookies de sesión, permisos y pertenencia a tableros, límites WIP, reordenación de checklists y movimiento de elementos entre ellas, columnas Kanban por usuario, encuadre de portadas, historial de actividad con tope de 15, subida de imágenes, flujo SSE y panel de administración).
-- **70 tests de Frontend (`utrel-client`):** Pruebas unitarias de cálculo de arrastre (DnD), fechas, columnas personalizadas, validación de manifest, iconos y CSS de la PWA (área segura del iPad, alto real de la ventana), y montaje completo de la aplicación compilada en `jsdom` (simulación de eventos SSE, clic derecho, contracción y renombrado de listas, marcado directo de tarjetas, etiquetas en el menú de la derecha con selector de color discreto, buscador a pantalla completa con resultados, lista nueva como una columna más, vistas normal y Kanban con columnas editables, encuadre de portada, historial de tablero y tarjeta, cinta Markdown, arrastre de checklists y elementos, cambio de fecha en el calendario, texto largo de checklists, vista previa de Markdown, confirmaciones internas, cierre de los desplegables al pulsar fuera y cierre inteligente de los editores).
+### 🧪 Cobertura de pruebas (113 tests automatizados)
+- **38 tests de Backend (`utrel-server`):** Pruebas contra un servidor Express real con base de datos SQLite efímera (autenticación con scrypt, cookies de sesión, permisos y pertenencia a tableros, límites WIP, reordenación de checklists y movimiento de elementos entre ellas, columnas Kanban por usuario, encuadre de portadas, metadatos de enlaces, creación de tarjetas desde una URL, título automático de YouTube y archivado de toda una lista, historial de actividad con tope de 15, subida de imágenes, flujo SSE y panel de administración).
+- **75 tests de Frontend (`utrel-client`):** Pruebas unitarias de cálculo de arrastre (DnD), fechas, columnas personalizadas, validación de manifest, iconos y CSS de la PWA (área segura del iPad, alto real de la ventana), y montaje completo de la aplicación compilada en `jsdom` (simulación de eventos SSE, clic derecho, contracción y renombrado de listas, marcado directo de tarjetas, etiquetas en el menú de la derecha con selector de color discreto, buscador a pantalla completa con resultados, lista nueva como una columna más, vistas normal y Kanban con columnas editables, encuadre de portada, historial de tablero y tarjeta, cinta Markdown, arrastre de checklists y elementos, cambio de fecha en el calendario, texto largo de checklists, vista previa de Markdown, enlaces de YouTube con portada y vista previa, establecimiento del banner del enlace, archivado en bloque con confirmación, cierre de los desplegables al pulsar fuera y cierre inteligente de los editores).
 
 ---
 

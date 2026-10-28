@@ -1383,6 +1383,16 @@ select:focus {
   gap: 3px;
 }
 
+.youtube-badge,
+.youtube-icon {
+  color: #ff5c5c;
+}
+
+.youtube-pill {
+  gap: 4px;
+  color: #ffb4b4;
+}
+
 .checklist-done {
   background: #2fa36b;
   color: #eafff4;
@@ -1594,6 +1604,92 @@ select:focus {
   border-radius: 8px;
   padding: 12px;
   min-height: 120px;
+}
+
+/* Vista previa del enlace: miniatura, favicon, título y acciones. */
+.link-preview {
+  display: flex;
+  gap: 12px;
+  padding: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.link-preview-thumb {
+  flex: 0 0 150px;
+  align-self: flex-start;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0b0f17;
+}
+
+.link-preview-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.link-preview-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.link-preview-site {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.link-favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.link-preview-title {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.link-preview-title:hover {
+  text-decoration: underline;
+}
+
+.link-preview-url {
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-preview .row {
+  margin-top: 2px;
+}
+
+@media (max-width: 560px) {
+  .link-preview {
+    flex-direction: column;
+  }
+
+  .link-preview-thumb {
+    flex-basis: auto;
+    width: 100%;
+  }
 }
 
 .inline-title {

@@ -70,6 +70,11 @@ CREATE TABLE IF NOT EXISTS cards (
   cover_color    TEXT,
   cover_image    TEXT,
   cover_position TEXT NOT NULL DEFAULT 'center',
+  link           TEXT,
+  link_title     TEXT,
+  link_image     TEXT,
+  link_icon      TEXT,
+  link_site      TEXT,
   position       REAL NOT NULL DEFAULT 1000,
   archived     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
@@ -156,6 +161,11 @@ function migrate(db) {
   add('boards', 'background_image', 'TEXT')
   add('cards', 'cover_image', 'TEXT')
   add('cards', 'cover_position', "TEXT NOT NULL DEFAULT 'center'")
+  add('cards', 'link', 'TEXT')
+  add('cards', 'link_title', 'TEXT')
+  add('cards', 'link_image', 'TEXT')
+  add('cards', 'link_icon', 'TEXT')
+  add('cards', 'link_site', 'TEXT')
   add('lists', 'color', 'TEXT')
   add('lists', 'card_limit', 'INTEGER')
   add('users', 'avatar', 'TEXT')

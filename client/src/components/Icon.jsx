@@ -54,6 +54,30 @@ import {
 } from 'lucide-react'
 
 /**
+ * Icono de YouTube. Lucide retiró los logotipos de marcas, así que este glifo
+ * replica su trazo para no depender de emojis ni de imágenes externas.
+ */
+function YoutubeGlyph({ size = 24, strokeWidth = 2, ...props }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17" />
+      <path d="m10 15 5-3-5-3z" />
+    </svg>
+  )
+}
+
+/**
  * Iconos de la interfaz. Todos vienen de Lucide (biblioteca SVG de trazo
  * abierto, https://lucide.dev) con el mismo grosor de línea, para que la app
  * se vea coherente sin depender de emojis del sistema.
@@ -110,6 +134,7 @@ const ICONS = {
   user: User,
   users: Users,
   x: X,
+  youtube: YoutubeGlyph,
   zap: Zap,
 }
 
