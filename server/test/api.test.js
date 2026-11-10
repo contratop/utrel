@@ -309,6 +309,173 @@ test('archivar todas las tarjetas de una lista', async () => {
   await req('DELETE', `/api/lists/${listId}`, { cookie: state.cookieA })
 })
 
+test('copiar una tarjeta clona propiedades, etiquetas, miembros y checklists', async () => {
+  const created = await req('POST', `/api/lists/${state.listId}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Original para copiar' },
+  })
+  const originalId = created.data.card.id
+  const dueDate = new Date(Date.now() + 3 * 86400000).toISOString()
+
+  await req('PATCH', `/api/cards/${originalId}`, {
+    cookie: state.cookieA,
+    body: {
+      description: 'Descripción original',
+      dueDate,
+      priority: 'medium',
+      coverColor: 'sky',
+      coverPosition: 'bottom',
+      link: 'https://ejemplo.com/articulo',
+    },
+  })
+
+  const board = await req('GET', `/api/boards/${state.boardId}`, { cookie: state.cookieA })
+  const label = board.data.labels[0]
+  await req('POST', `/api/cards/${originalId}/labels`, {
+    cookie: state.cookieA,
+    body: { labelId: label.id },
+  })
+  await req('POST', `/api/cards/${originalId}/members`, {
+    cookie: state.cookieA,
+    body: { userId: state.userA.id },
+  })
+  const checklist = await req('POST', `/api/cards/${originalId}/checklists`, {
+    cookie: state.cookieA,
+    body: { title: 'Pasos' },
+  })
+  const checklistId = checklist.data.card.checklists[0].id
+  const firstItem = await req('POST', `/api/checklists/${checklistId}/items`, {
+    cookie: state.cookieA,
+    body: { text: 'Uno' },
+  })
+  await req('PATCH', `/api/checklist-items/${firstItem.data.card.checklists[0].items[0].id}`, {
+    cookie: state.cookieA,
+    body: { done: true },
+  })
+  await req('POST', `/api/checklists/${checklistId}/items`, {
+    cookie: state.cookieA,
+    body: { text: 'Dos' },
+  })
+  await req('POST', `/api/cards/${originalId}/comments`, {
+    cookie: state.cookieA,
+    body: { body: 'Comentario que no se copia' },
+  })
+
+  const copied = await req('POST', `/api/cards/${originalId}/copy`, { cookie: state.cookieA })
+  assert.equal(copied.status, 201)
+  const clone = copied.data.card
+  assert.notEqual(clone.id, originalId)
+  assert.equal(clone.listId, created.data.card.listId, 'la copia vive en la misma columna')
+  assert.equal(clone.title, 'Original para copiar')
+  assert.equal(clone.description, 'Descripción original')
+  assert.equal(clone.dueDate, dueDate)
+  assert.equal(clone.priority, 'medium')
+  assert.equal(clone.coverColor, 'sky')
+  assert.equal(clone.coverPosition, 'bottom')
+  assert.equal(clone.link.url, 'https://ejemplo.com/articulo')
+  assert.deepEqual(clone.labels.map((entry) => entry.id), [label.id])
+  assert.deepEqual(clone.members.map((entry) => entry.id), [state.userA.id])
+  assert.equal(clone.checklists.length, 1)
+  assert.deepEqual(clone.checklists[0].items.map((item) => item.text), ['Uno', 'Dos'])
+  assert.equal(clone.checklists[0].items[0].done, true)
+  assert.equal(clone.comments.length, 0, 'los comentarios no se duplican')
+
+  const after = await req('GET', `/api/boards/${state.boardId}`, { cookie: state.cookieA })
+  assert.ok(
+    after.data.activity.some((entry) => entry.message.includes('copió la tarjeta «Original para copiar»')),
+    'el historial del tablero registra la copia'
+  )
+
+  await req('DELETE', `/api/cards/${clone.id}`, { cookie: state.cookieA })
+  await req('DELETE', `/api/cards/${originalId}`, { cookie: state.cookieA })
+})
+
+test('copiar un tablero conserva etiquetas y columnas y permite omitir tarjetas', async () => {
+  const created = await req('POST', '/api/boards', {
+    cookie: state.cookieA,
+    body: { title: 'Plantilla de proyecto', background: 'forest' },
+  })
+  const source = created.data
+  const sourceId = source.board.id
+  const sourceList = source.lists[1]
+  const createdCard = await req('POST', `/api/lists/${sourceList.id}/cards`, {
+    cookie: state.cookieA,
+    body: { title: 'Tarjeta de la plantilla' },
+  })
+  const sourceCardId = createdCard.data.card.id
+  await req('PATCH', `/api/cards/${sourceCardId}`, {
+    cookie: state.cookieA,
+    body: { description: 'Contenido que viaja con la copia', link: 'https://ejemplo.com/articulo' },
+  })
+
+  const sourceLabel = source.labels[0]
+  await req('POST', `/api/cards/${sourceCardId}/labels`, {
+    cookie: state.cookieA,
+    body: { labelId: sourceLabel.id },
+  })
+  const checklist = await req('POST', `/api/cards/${sourceCardId}/checklists`, {
+    cookie: state.cookieA,
+    body: { title: 'Pasos de la plantilla' },
+  })
+  const item = await req('POST', `/api/checklists/${checklist.data.card.checklists[0].id}/items`, {
+    cookie: state.cookieA,
+    body: { text: 'Primer paso' },
+  })
+  await req('PATCH', `/api/checklist-items/${item.data.card.checklists[0].items[0].id}`, {
+    cookie: state.cookieA,
+    body: { done: true },
+  })
+
+  const withoutCards = await req('POST', `/api/boards/${sourceId}/copy`, {
+    cookie: state.cookieA,
+    body: { includeCards: false },
+  })
+  assert.equal(withoutCards.status, 201)
+  assert.equal(withoutCards.data.board.title, 'Copia de Plantilla de proyecto')
+  assert.notEqual(withoutCards.data.board.id, sourceId)
+  assert.equal(withoutCards.data.board.ownerId, state.userA.id)
+  assert.equal(withoutCards.data.board.background, 'forest')
+  assert.equal(withoutCards.data.members.length, 1, 'la copia pertenece solo a quien la crea')
+  assert.deepEqual(
+    withoutCards.data.lists.map((list) => list.title),
+    source.lists.map((list) => list.title),
+    'se copian las columnas en el mismo orden'
+  )
+  assert.deepEqual(
+    withoutCards.data.labels.map((label) => [label.name, label.color]),
+    source.labels.map((label) => [label.name, label.color]),
+    'se copian las etiquetas'
+  )
+  assert.notEqual(withoutCards.data.labels[0].id, sourceLabel.id, 'las etiquetas tienen IDs nuevos')
+  assert.equal(withoutCards.data.lists.flatMap((list) => list.cards).length, 0)
+
+  const withCards = await req('POST', `/api/boards/${sourceId}/copy`, {
+    cookie: state.cookieA,
+    body: { includeCards: true },
+  })
+  assert.equal(withCards.status, 201)
+  const copiedList = withCards.data.lists.find((list) => list.title === sourceList.title)
+  assert.equal(copiedList.cards.length, 1)
+  const copiedCard = copiedList.cards[0]
+  assert.notEqual(copiedCard.id, sourceCardId)
+  assert.equal(copiedCard.title, 'Tarjeta de la plantilla')
+  assert.equal(copiedCard.description, 'Contenido que viaja con la copia')
+  assert.equal(copiedCard.link.url, 'https://ejemplo.com/articulo')
+  assert.equal(copiedCard.labels.length, 1)
+  assert.equal(copiedCard.labels[0].name, sourceLabel.name)
+  assert.ok(
+    withCards.data.labels.some((label) => label.id === copiedCard.labels[0].id),
+    'la etiqueta de la tarjeta pertenece al tablero nuevo'
+  )
+  assert.equal(copiedCard.checklist.total, 1)
+  assert.equal(copiedCard.checklist.done, 1)
+  assert.equal(copiedCard.commentCount, 0)
+
+  for (const boardId of [sourceId, withoutCards.data.board.id, withCards.data.board.id]) {
+    await req('DELETE', `/api/boards/${boardId}`, { cookie: state.cookieA })
+  }
+})
+
 test('checklist con progreso en el payload del tablero', async () => {
   const checklist = await req('POST', `/api/cards/${state.cardId}/checklists`, {
     cookie: state.cookieA,
@@ -1519,4 +1686,218 @@ test('una instancia sin usuarios se ofrece para crear al administrador', async (
     freshDb.close()
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('los tokens de API autentican la API REST sin cookies', async () => {
+  const created = await req('POST', '/api/auth/tokens', {
+    cookie: state.cookieA,
+    body: { name: 'n8n' },
+  })
+  assert.equal(created.status, 201)
+  assert.match(created.data.token, /^utrel_[A-Za-z0-9_-]{40,}$/)
+  assert.equal(created.data.tokens.length, 1)
+  assert.equal(created.data.tokens[0].name, 'n8n')
+  assert.ok(!('token' in created.data.tokens[0]), 'el listado no revela el token')
+  state.apiToken = created.data.token
+  state.apiTokenId = created.data.tokens[0].id
+
+  const me = await req('GET', '/api/auth/me', {
+    headers: { Authorization: `Bearer ${state.apiToken}` },
+  })
+  assert.equal(me.status, 200)
+  assert.equal(me.data.user.username, 'ana')
+
+  const invalid = await req('GET', '/api/auth/me', {
+    headers: { Authorization: 'Bearer utrel_invalido' },
+  })
+  assert.equal(invalid.status, 401)
+
+  const list = await req('GET', '/api/auth/tokens', { cookie: state.cookieA })
+  assert.equal(list.data.tokens.length, 1)
+
+  // Un tablero limpio: los tests anteriores eliminan los suyos.
+  const board = await req('POST', '/api/boards', {
+    cookie: state.cookieA,
+    body: { title: 'Automatizaciones' },
+  })
+  state.apiBoardId = board.data.board.id
+  state.apiListId = board.data.lists[0].id
+  state.apiLabelId = board.data.labels[0].id
+})
+
+test('la API REST crea, edita y borra tarjetas con un token', async () => {
+  const headers = { Authorization: `Bearer ${state.apiToken}` }
+
+  const created = await req('POST', `/api/lists/${state.apiListId}/cards`, {
+    headers,
+    body: { title: 'Creada por n8n' },
+  })
+  assert.equal(created.status, 201)
+  const cardId = created.data.card.id
+
+  const patched = await req('PATCH', `/api/cards/${cardId}`, {
+    headers,
+    body: {
+      description: 'Editada por una automatización',
+      priority: 'high',
+      dueDate: '2026-12-31',
+    },
+  })
+  assert.equal(patched.status, 200)
+  assert.equal(patched.data.card.description, 'Editada por una automatización')
+  assert.equal(patched.data.card.priority, 'high')
+
+  const archived = await req('PATCH', `/api/cards/${cardId}`, {
+    headers,
+    body: { archived: true },
+  })
+  assert.equal(archived.data.card.archived, true)
+
+  const deleted = await req('DELETE', `/api/cards/${cardId}`, { headers })
+  assert.equal(deleted.status, 200)
+
+  const gone = await req('GET', `/api/cards/${cardId}`, { headers })
+  assert.equal(gone.status, 404)
+})
+
+test('el MCP lista herramientas y crea, consulta, edita y borra tarjetas', async () => {
+  const headers = {
+    Authorization: `Bearer ${state.apiToken}`,
+    Accept: 'application/json, text/event-stream',
+  }
+  const rpc = (body) => req('POST', '/api/mcp', { headers, body })
+
+  const init = await rpc({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'n8n', version: '1' },
+    },
+  })
+  assert.equal(init.status, 200)
+  assert.equal(init.data.result.serverInfo.name, 'utrel')
+  assert.equal(init.data.result.capabilities.tools.listChanged, false)
+
+  const initialized = await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' })
+  assert.equal(initialized.status, 202)
+
+  const listed = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
+  const names = listed.data.result.tools.map((tool) => tool.name)
+  for (const name of ['create_card', 'update_card', 'delete_card', 'get_card', 'get_board']) {
+    assert.ok(names.includes(name), `falta la herramienta ${name}`)
+  }
+
+  const created = await rpc({
+    jsonrpc: '2.0',
+    id: 3,
+    method: 'tools/call',
+    params: {
+      name: 'create_card',
+      arguments: {
+        listId: state.apiListId,
+        title: 'Tarea para IA',
+        description: 'Creada por un modelo',
+        dueDate: '2026-12-01',
+        priority: 'urgent',
+        coverColor: 'blue',
+        coverPosition: 'top',
+        link: 'https://ejemplo.com/articulo',
+        labelIds: [state.apiLabelId],
+        memberIds: [state.userA.id],
+        checklists: [{ title: 'Pasos', items: ['Analizar', { text: 'Publicar', done: true }] }],
+      },
+    },
+  })
+  assert.equal(created.data.result.isError, undefined)
+  const card = JSON.parse(created.data.result.content[0].text).card
+  assert.equal(card.listId, state.apiListId)
+  assert.equal(card.title, 'Tarea para IA')
+  assert.equal(card.priority, 'urgent')
+  assert.equal(card.coverColor, 'blue')
+  assert.equal(card.coverPosition, 'top')
+  assert.equal(card.link.url, 'https://ejemplo.com/articulo')
+  assert.equal(card.link.title, 'Guía de ejemplo')
+  assert.equal(card.coverImage, 'https://ejemplo.com/portada.jpg')
+  assert.deepEqual(card.labels.map((entry) => entry.id), [state.apiLabelId])
+  assert.deepEqual(card.members.map((entry) => entry.id), [state.userA.id])
+  assert.deepEqual(
+    card.checklists[0].items.map((item) => item.text),
+    ['Analizar', 'Publicar']
+  )
+  assert.equal(card.checklists[0].items[1].done, true)
+
+  const updated = await rpc({
+    jsonrpc: '2.0',
+    id: 4,
+    method: 'tools/call',
+    params: {
+      name: 'update_card',
+      arguments: {
+        cardId: card.id,
+        title: 'Tarea editada por IA',
+        description: '',
+        dueComplete: true,
+        labelIds: [],
+        memberIds: [],
+      },
+    },
+  })
+  const edited = JSON.parse(updated.data.result.content[0].text).card
+  assert.equal(edited.title, 'Tarea editada por IA')
+  assert.equal(edited.description, '')
+  assert.equal(edited.dueComplete, true)
+  assert.deepEqual(edited.labels, [])
+  assert.deepEqual(edited.members, [])
+
+  const fetched = await rpc({
+    jsonrpc: '2.0',
+    id: 5,
+    method: 'tools/call',
+    params: { name: 'get_card', arguments: { cardId: card.id } },
+  })
+  assert.equal(JSON.parse(fetched.data.result.content[0].text).card.title, 'Tarea editada por IA')
+
+  const deleted = await rpc({
+    jsonrpc: '2.0',
+    id: 6,
+    method: 'tools/call',
+    params: { name: 'delete_card', arguments: { cardId: card.id } },
+  })
+  assert.equal(JSON.parse(deleted.data.result.content[0].text).ok, true)
+
+  const missing = await rpc({
+    jsonrpc: '2.0',
+    id: 7,
+    method: 'tools/call',
+    params: { name: 'get_card', arguments: { cardId: card.id } },
+  })
+  assert.equal(missing.data.result.isError, true)
+
+  const unknown = await rpc({
+    jsonrpc: '2.0',
+    id: 8,
+    method: 'tools/call',
+    params: { name: 'no_existe', arguments: {} },
+  })
+  assert.equal(unknown.data.error.code, -32602)
+})
+
+test('revocar un token corta su acceso a la API y al MCP', async () => {
+  const revoked = await req('DELETE', `/api/auth/tokens/${state.apiTokenId}`, {
+    cookie: state.cookieA,
+  })
+  assert.equal(revoked.status, 200)
+  assert.equal(revoked.data.tokens.length, 0)
+
+  const headers = { Authorization: `Bearer ${state.apiToken}` }
+  const me = await req('GET', '/api/auth/me', { headers })
+  assert.equal(me.status, 401)
+  const mcp = await req('POST', '/api/mcp', {
+    headers,
+    body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+  })
+  assert.equal(mcp.status, 401)
 })

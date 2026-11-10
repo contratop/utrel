@@ -18,6 +18,10 @@ export default function CardItem({
   const status = dueStatus(card.dueDate, card.dueComplete)
   const hasChecklist = card.checklist.total > 0
   const checklistDone = hasChecklist && card.checklist.done === card.checklist.total
+  const checklistPercent = hasChecklist
+    ? Math.round((card.checklist.done / card.checklist.total) * 100)
+    : 0
+  const youtubeLink = isYoutubeLink(card.link?.url)
   const cover = cardCover(card)
 
   return (
@@ -73,9 +77,12 @@ export default function CardItem({
         </div>
 
         <div className="card-badges">
-          {isYoutubeLink(card.link?.url) && (
-            <span className="icon-badge youtube-badge" title="Enlace de YouTube">
-              <Icon name="youtube" size={13} />
+          {card.link?.url && (
+            <span
+              className={`icon-badge${youtubeLink ? ' youtube-badge' : ' link-badge'}`}
+              title={youtubeLink ? 'Enlace de YouTube' : card.link.url}
+            >
+              <Icon name={youtubeLink ? 'youtube' : 'link'} size={13} />
             </span>
           )}
           {card.priority !== 'none' && (
@@ -119,6 +126,24 @@ export default function CardItem({
             </span>
           )}
         </div>
+
+        {hasChecklist && (
+          <div
+            className={`card-progress${checklistDone ? ' complete' : ''}`}
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={card.checklist.total}
+            aria-valuenow={card.checklist.done}
+            aria-valuetext={`${checklistPercent}% completado`}
+            aria-label={`Progreso del checklist: ${card.checklist.done} de ${card.checklist.total}`}
+            title={`Checklist: ${card.checklist.done} de ${card.checklist.total}`}
+          >
+            <div className="card-progress-track">
+              <div className="card-progress-fill" style={{ width: `${checklistPercent}%` }} />
+            </div>
+            <span className="card-progress-percent" aria-hidden="true">{checklistPercent}%</span>
+          </div>
+        )}
       </div>
     </article>
   )

@@ -12,7 +12,8 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Fair--Source%20%2F%20Non--Commercial-blue.svg" alt="Licencia No Comercial" /></a>
-  <img src="https://img.shields.io/badge/Tests-113%20passing-brightgreen.svg" alt="113 tests pasando" />
+  <img src="https://img.shields.io/badge/Tests-123%20passing-brightgreen.svg" alt="123 tests pasando" />
+  <img src="https://img.shields.io/badge/Version-1.2-blue.svg" alt="Versión 1.2" />
   <img src="https://img.shields.io/badge/Docker-GHCR%20Ready-2496ED?logo=docker&logoColor=white" alt="Docker GHCR" />
   <img src="https://img.shields.io/badge/Node-%3E%3D20.19-green.svg?logo=node.js" alt="Node >= 20.19" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=black" alt="React 19" />
@@ -39,6 +40,7 @@ Es una aplicación de gestión de proyectos y tableros Kanban construida desde c
 
 ### 📋 Tableros y Columnas
 - **Múltiples tableros por usuario** con papelera de elementos archivados (listas y tarjetas) y dos vistas: **Normal** (cuadrícula de portadas) o **Kanban**, donde cada tablero es una tarjeta. Las columnas del Kanban son tuyas: añade, renombra, reordena o elimina columnas (hasta 8) y mueve cada tablero entre ellas; se guardan por usuario.
+- **Copiar tableros completos:** «Copiar tablero…» en el menú del tablero permite duplicar un tablero completo con sus columnas, colores, etiquetas y fondo, con la opción de copiar también sus tarjetas o dejarlo limpio como plantilla.
 - **Fondos personalizables:** Elige entre degradados integrados, sube tus propias imágenes (PNG, JPEG, WebP, GIF, AVIF hasta 8 MB) o enlaza una URL remota con previsualización en vivo.
 - **Color de lista personalizable (10 tonos):** Tiñe la columna entera con un degradado sutil y una barra de acento que respeta la legibilidad de las tarjetas.
 - **Límites WIP por lista (Work In Progress):** Fija un tope de tarjetas por columna. El contador te avisa visualmente: amarillo (≤ 3 huecos), rojo (límite alcanzado) y morado (límite superado), sin bloquear la creación de tareas.
@@ -55,7 +57,7 @@ Es una aplicación de gestión de proyectos y tableros Kanban construida desde c
 - **Edición enriquecida:** Título y descripción con soporte completo de GitHub Flavored Markdown (GFM) saneado con DOMPurify. Al editar la descripción, una cinta de opciones (negrita, cursiva, encabezados, listas, checklist, cita, código, enlace y separador) aplica el formato sobre la selección sin soltar el teclado. En el detalle, el título es de una sola línea (sin saltos) y admite como máximo 100 caracteres.
 - **Completado rápido de tareas:** Círculo interactivo directo en la tarjeta del tablero —y también en la vista de calendario— para marcar la fecha de vencimiento como completada al instante con un solo toque y sin abrir el modal.
 - **Fechas de vencimiento inteligentes:** Código de colores semafórico según la urgencia (vencida, urgente, próxima o completada).
-- **Checklists múltiples:** Crea varias listas de comprobación por tarjeta con barra de progreso y cálculo porcentual en tiempo real. Reordena las checklists con su asa y arrastra cualquier elemento dentro de su checklist o a otra de la misma tarjeta.
+- **Checklists múltiples y progreso en tarjeta:** Crea varias listas de comprobación por tarjeta con barra de progreso y cálculo porcentual en tiempo real. En el tablero, las tarjetas con checklists muestran su barra de progreso y porcentaje (`0%` a `100%`) directamente, tiñéndose en verde al completarse. Reordena las checklists con su asa y arrastra cualquier elemento dentro de su checklist o a otra de la misma tarjeta.
 - **Etiquetas y Portadas:** El color se elige en un desplegable discreto —una pastilla con el color actual y la paleta de 10 tonos al desplegarla— en vez de tener todas las muestras a la vista, fondos de portada (color o imagen propia) y miembros asignados con su avatar. Con una imagen de portada eliges su encuadre en una cuadrícula 3×3 (nueve posiciones) y la tarjeta muestra exactamente esa zona.
 - **Etiquetas desde el menú:** Crear, renombrar, recolorear o eliminar etiquetas vive en «Etiquetas…», dentro del menú de la derecha, para no saturar la barra superior.
 - **Checklists legibles:** El texto de cada elemento crece con su contenido, así que un paso largo se ve entero de un vistazo en lugar de quedar recortado.
@@ -63,6 +65,7 @@ Es una aplicación de gestión de proyectos y tableros Kanban construida desde c
 - **Desplegables que se cierran solos:** Los menús de la barra superior y de cada lista, y el selector de color, se cierran al pulsar fuera de ellos o con Escape, sin dejar nada flotando en pantalla.
 - **Insignias en la tarjeta:** Cada tarjeta resume de un vistazo su prioridad, su fecha, si tiene descripción, su checklist (`hecho/total`) y sus comentarios, con icono y número en la misma línea.
 - **Enlaces con vista previa:** Pega un enlace al crear una tarjeta y nace con el nombre de la página o del vídeo, el enlace y su miniatura como banner (en YouTube, además, con el icono del servicio). Cualquier tarjeta admite un enlace en su sección «Enlace», que carga título, favicon y miniatura —evitando redes privadas— y ofrece «Establecer banner» para usar la imagen capturada como portada.
+- **Copiar tarjetas:** «Copiar tarjeta», tanto en el menú contextual como en las acciones del detalle, duplica la tarjeta en su misma columna con todas sus propiedades: descripción, fecha, prioridad, portada, enlace, etiquetas, miembros y checklists. Los comentarios no se duplican.
 - **Iconos profesionales:** Toda la interfaz usa los iconos SVG de [Lucide](https://lucide.dev) (menús, tarjetas, diálogos) en lugar de emojis del sistema, con el mismo grosor de trazo en toda la app.
 - **Comentarios y Colaboración:** Hilo de discusión con Markdown, marcas de tiempo y avatares de usuario.
 - **Historial de actividad:** Cada tarjeta guarda las últimas 15 actualizaciones de sus miembros (quién asignó o quitó a quién) y el tablero conserva sus últimas 15 actualizaciones propias (nombre, fondo e incorporaciones o salidas de miembros), con autor y fecha.
@@ -80,6 +83,121 @@ Es una aplicación de gestión de proyectos y tableros Kanban construida desde c
 - **Primer usuario = Administrador:** La primera cuenta creada en una instalación limpia adquiere permisos de administrador automáticamente.
 - **Control de registro:** Abre o cierra el registro público de cuentas con un solo interruptor. Si está cerrado, solo los administradores pueden dar de alta nuevos usuarios.
 - **Gestión de cuentas:** Promociona administradores, cambia contraseñas, edita perfiles, deshabilita usuarios (con corte inmediato de sesiones) o elimina cuentas junto con sus tableros asociados.
+
+### 🤖 API, MCP y automatizaciones
+- **Tokens personales:** Genera tokens desde «Mi perfil → Acceso API y MCP», con nombre, fecha de último uso y revocación inmediata. Cada token se muestra una sola vez y se guarda hasheado.
+- **API REST completa:** Con `Authorization: Bearer <token>` puedes listar tableros, crear listas, crear tarjetas y completar todos sus campos (descripción, fecha, prioridad, portada, enlace, etiquetas, miembros y checklists), editarlas, moverlas, archivarlas y borrarlas. Es la misma API que usa la interfaz, así que respeta permisos y registra la actividad.
+- **Servidor MCP:** Endpoint `POST /api/mcp` compatible con Streamable HTTP y JSON-RPC 2.0. Expone herramientas para que n8n, Claude, ChatGPT u otro agente de IA consulten tableros y gestionen tarjetas sin escribir código.
+- **n8n y cualquier automatización:** Sirve tanto el nodo MCP Client como el nodo HTTP Request, porque la autenticación es un simple encabezado Bearer.
+- **Acceso directo al código:** Un icono discreto en la esquina inferior derecha enlaza al [repositorio oficial](https://github.com/contratop/utrel).
+
+---
+
+## 🤖 API REST y MCP
+
+> 📘 Referencia completa con todos los endpoints, payloads, errores y ejemplos: **[API.md](API.md)**.
+
+### 1. Crear un token
+
+1. Abre tu avatar en la esquina superior derecha y entra en **Mi perfil**.
+2. En **Acceso API y MCP**, escribe un nombre (por ejemplo `n8n`) y pulsa **Generar token**.
+3. Copia el token en ese momento: no se vuelve a mostrar. Puedes revocarlo cuando quieras desde la misma lista.
+
+Envíalo siempre en la cabecera:
+
+```http
+Authorization: Bearer utrel_…
+```
+
+### 2. API REST
+
+La base es `https://tu-servidor/api`. Los endpoints son los mismos que consume la web:
+
+| Método | Ruta | Qué hace |
+| :--- | :--- | :--- |
+| `GET` | `/boards` | Lista tus tableros |
+| `GET` | `/boards/:id` | Tablero completo (listas, tarjetas, etiquetas y miembros) |
+| `POST` | `/boards/:id/copy` | Copia etiquetas y columnas, con tarjetas opcionales |
+| `POST` | `/boards/:id/lists` | Crea una lista |
+| `POST` | `/lists/:id/cards` | Crea una tarjeta |
+| `PATCH` | `/cards/:id` | Edita campos, mueve (`listId`, `targetIndex`) o archiva |
+| `DELETE` | `/cards/:id` | Borra una tarjeta |
+| `POST` | `/cards/:id/copy` | Copia la tarjeta en su lista |
+| `POST` | `/cards/:id/comments` | Añade un comentario |
+| `POST` | `/cards/:id/checklists` | Crea un checklist |
+| `POST` | `/checklists/:id/items` | Añade un elemento |
+
+```bash
+# Crear una tarjeta
+curl -X POST https://tu-servidor/api/lists/<LIST_ID>/cards \
+  -H "Authorization: Bearer $UTREL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Revisar el PR",
+    "description": "Creada desde n8n",
+    "dueDate": "2026-12-01",
+    "priority": "high",
+    "labelIds": ["<LABEL_ID>"]
+  }'
+
+# Editar, mover o archivar
+curl -X PATCH https://tu-servidor/api/cards/<CARD_ID> \
+  -H "Authorization: Bearer $UTREL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dueComplete": true}'
+
+# Borrar
+curl -X DELETE https://tu-servidor/api/cards/<CARD_ID> \
+  -H "Authorization: Bearer $UTREL_TOKEN"
+```
+
+> Los IDs de listas y etiquetas se obtienen con `GET /api/boards/:id`. Los permisos son los del usuario dueño del token: si no perteneces al tablero, la API responde `404`.
+
+### 3. Servidor MCP
+
+El endpoint MCP es `https://tu-servidor/api/mcp` y habla JSON-RPC 2.0 sobre Streamable HTTP (respuestas `application/json`). Se autentica con el mismo token.
+
+Herramientas disponibles:
+
+| Herramienta | Para qué sirve |
+| :--- | :--- |
+| `list_boards` | Ver tableros accesibles |
+| `get_board` | Ver listas, tarjetas y etiquetas de un tablero |
+| `get_card` | Ver una tarjeta completa |
+| `create_list` | Crear una columna |
+| `create_card` | Crear tarjeta con todos sus campos y checklists |
+| `update_card` | Editar, mover, archivar, reemplazar etiquetas o miembros |
+| `delete_card` | Borrar una tarjeta |
+
+Comprobación rápida con `curl`:
+
+```bash
+curl -X POST https://tu-servidor/api/mcp \
+  -H "Authorization: Bearer $UTREL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+En **n8n** puedes usar el nodo **MCP Client** apuntando a esa URL y añadiendo la cabecera `Authorization`, o el nodo **HTTP Request** con el mismo encabezado. Ejemplo de configuración para un cliente MCP de escritorio:
+
+```json
+{
+  "mcpServers": {
+    "utrel": {
+      "type": "http",
+      "url": "https://tu-servidor/api/mcp",
+      "headers": {
+        "Authorization": "Bearer utrel_…"
+      }
+    }
+  }
+}
+```
+
+> El token concede acceso completo a tu cuenta. Créalo solo para integraciones de confianza y revócalo si dejas de usarlo.
+
+La guía ampliada —incluyendo subrecursos de tarjetas, subidas, SSE, referencia de errores y configuración de clientes MCP— está en **[API.md](API.md)**.
 
 ---
 
@@ -180,9 +298,9 @@ npm run build
 npm test
 ```
 
-### 🧪 Cobertura de pruebas (113 tests automatizados)
-- **38 tests de Backend (`utrel-server`):** Pruebas contra un servidor Express real con base de datos SQLite efímera (autenticación con scrypt, cookies de sesión, permisos y pertenencia a tableros, límites WIP, reordenación de checklists y movimiento de elementos entre ellas, columnas Kanban por usuario, encuadre de portadas, metadatos de enlaces, creación de tarjetas desde una URL, título automático de YouTube y archivado de toda una lista, historial de actividad con tope de 15, subida de imágenes, flujo SSE y panel de administración).
-- **75 tests de Frontend (`utrel-client`):** Pruebas unitarias de cálculo de arrastre (DnD), fechas, columnas personalizadas, validación de manifest, iconos y CSS de la PWA (área segura del iPad, alto real de la ventana), y montaje completo de la aplicación compilada en `jsdom` (simulación de eventos SSE, clic derecho, contracción y renombrado de listas, marcado directo de tarjetas, etiquetas en el menú de la derecha con selector de color discreto, buscador a pantalla completa con resultados, lista nueva como una columna más, vistas normal y Kanban con columnas editables, encuadre de portada, historial de tablero y tarjeta, cinta Markdown, arrastre de checklists y elementos, cambio de fecha en el calendario, texto largo de checklists, vista previa de Markdown, enlaces de YouTube con portada y vista previa, establecimiento del banner del enlace, archivado en bloque con confirmación, cierre de los desplegables al pulsar fuera y cierre inteligente de los editores).
+### 🧪 Cobertura de pruebas (123 tests automatizados)
+- **44 tests de Backend (`utrel-server`):** Pruebas contra un servidor Express real con base de datos SQLite efímera (autenticación con scrypt, cookies de sesión, tokens Bearer, API REST autenticada, servidor MCP con `initialize`, `tools/list` y CRUD de tarjetas, permisos y pertenencia a tableros, límites WIP, reordenación de checklists y movimiento de elementos entre ellas, columnas Kanban por usuario, encuadre de portadas, metadatos de enlaces, creación de tarjetas desde una URL, copia completa de tarjetas y de tableros con o sin contenido, título automático de YouTube y archivado de toda una lista, historial de actividad con tope de 15, subida de imágenes, flujo SSE y panel de administración).
+- **79 tests de Frontend (`utrel-client`):** Pruebas unitarias de cálculo de arrastre (DnD), fechas, columnas personalizadas, validación de manifest, iconos y CSS de la PWA (área segura del iPad, alto real de la ventana), y montaje completo de la aplicación compilada en `jsdom` (simulación de eventos SSE, clic derecho, contracción y renombrado de listas, marcado directo de tarjetas, etiquetas en el menú de la derecha con selector de color discreto, buscador a pantalla completa con resultados, lista nueva como una columna más, vistas normal y Kanban con columnas editables, encuadre de portada, historial de tablero y tarjeta, cinta Markdown, arrastre de checklists y elementos, cambio de fecha en el calendario, texto largo de checklists, vista previa de Markdown, enlaces de YouTube con portada y vista previa, icono de enlace y progreso total de checklists en las tarjetas, establecimiento del banner del enlace, archivado en bloque con confirmación, copia de tarjetas desde el menú y desde el detalle, copia de tableros con elección de contenido y cancelación, generación y revocación de tokens de API/MCP en el perfil, enlace al repositorio oficial, cierre de los desplegables al pulsar fuera y cierre inteligente de los editores).
 
 ---
 

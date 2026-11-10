@@ -177,6 +177,169 @@ export function boardRoutes(db) {
     res.json(boardPayload(db, req.params.id))
   })
 
+  // Copia el tablero con sus etiquetas y columnas. Las tarjetas son opcionales
+  // porque un tablero puede usarse como plantilla sin arrastrar su contenido.
+  router.post('/boards/:id/copy', (req, res) => {
+    const source = db.prepare('SELECT * FROM boards WHERE id = ?').get(req.params.id)
+    if (!source) notFound('Tablero no encontrado')
+    requireBoard(db, req.user.id, req.params.id)
+
+    const body = req.body || {}
+    const includeCards = bool(body.includeCards, 'includeCards') === 1
+    const id = uid()
+    const stamp = iso()
+    const title = `Copia de ${source.title}`.slice(0, 120)
+
+    const labels = db
+      .prepare('SELECT * FROM labels WHERE board_id = ? ORDER BY rowid ASC')
+      .all(source.id)
+    const lists = db
+      .prepare(
+        `SELECT * FROM lists WHERE board_id = ? AND archived = 0
+          ORDER BY position ASC, rowid ASC`
+      )
+      .all(source.id)
+    const cards = includeCards
+      ? db
+          .prepare(
+            `SELECT * FROM cards WHERE board_id = ? AND archived = 0
+              ORDER BY position ASC, rowid ASC`
+          )
+          .all(source.id)
+      : []
+
+    const insertBoard = db.prepare(
+      `INSERT INTO boards (id, title, background, background_image, owner_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    const insertMember = db.prepare(
+      'INSERT INTO board_members (board_id, user_id, role) VALUES (?, ?, ?)'
+    )
+    const insertLabel = db.prepare(
+      'INSERT INTO labels (id, board_id, name, color) VALUES (?, ?, ?, ?)'
+    )
+    const insertList = db.prepare(
+      `INSERT INTO lists (id, board_id, title, color, card_limit, position, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    const insertCard = db.prepare(
+      `INSERT INTO cards (
+         id, board_id, list_id, title, description, due_date, due_complete, priority,
+         cover_color, cover_image, cover_position,
+         link, link_title, link_image, link_icon, link_site,
+         position, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    const insertCardLabel = db.prepare(
+      'INSERT OR IGNORE INTO card_labels (card_id, label_id) VALUES (?, ?)'
+    )
+    const insertChecklist = db.prepare(
+      'INSERT INTO checklists (id, card_id, title, position) VALUES (?, ?, ?, ?)'
+    )
+    const insertItem = db.prepare(
+      `INSERT INTO checklist_items (id, checklist_id, text, done, position, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+
+    const copy = db.transaction(() => {
+      insertBoard.run(
+        id,
+        title,
+        source.background,
+        source.background_image,
+        req.user.id,
+        stamp
+      )
+      insertMember.run(id, req.user.id, 'owner')
+
+      const labelIds = new Map()
+      for (const label of labels) {
+        const labelId = uid()
+        labelIds.set(label.id, labelId)
+        insertLabel.run(labelId, id, label.name, label.color)
+      }
+
+      const listIds = new Map()
+      for (const list of lists) {
+        const listId = uid()
+        listIds.set(list.id, listId)
+        insertList.run(
+          listId,
+          id,
+          list.title,
+          list.color,
+          list.card_limit,
+          list.position,
+          stamp
+        )
+      }
+
+      for (const card of cards) {
+        const cardId = uid()
+        const listId = listIds.get(card.list_id)
+        if (!listId) continue
+        insertCard.run(
+          cardId,
+          id,
+          listId,
+          card.title,
+          card.description,
+          card.due_date,
+          card.due_complete,
+          card.priority,
+          card.cover_color,
+          card.cover_image,
+          card.cover_position,
+          card.link,
+          card.link_title,
+          card.link_image,
+          card.link_icon,
+          card.link_site,
+          card.position,
+          stamp,
+          stamp
+        )
+
+        const cardLabels = db
+          .prepare('SELECT label_id FROM card_labels WHERE card_id = ?')
+          .all(card.id)
+        for (const entry of cardLabels) {
+          const labelId = labelIds.get(entry.label_id)
+          if (labelId) insertCardLabel.run(cardId, labelId)
+        }
+
+        const checklists = db
+          .prepare('SELECT * FROM checklists WHERE card_id = ? ORDER BY position ASC, rowid ASC')
+          .all(card.id)
+        for (const checklist of checklists) {
+          const checklistId = uid()
+          insertChecklist.run(checklistId, cardId, checklist.title, checklist.position)
+          const items = db
+            .prepare(
+              'SELECT * FROM checklist_items WHERE checklist_id = ? ORDER BY position ASC, rowid ASC'
+            )
+            .all(checklist.id)
+          for (const item of items) {
+            insertItem.run(uid(), checklistId, item.text, item.done, item.position, stamp)
+          }
+        }
+      }
+    })
+    copy()
+
+    logActivity(db, {
+      boardId: id,
+      userId: req.user.id,
+      kind: 'board',
+      message:
+        cards.length > 0
+          ? `creó el tablero a partir de «${source.title}» con ${cards.length} tarjeta${cards.length === 1 ? '' : 's'}`
+          : `creó el tablero a partir de «${source.title}» sin tarjetas`,
+    })
+
+    res.status(201).json(boardPayload(db, id))
+  })
+
   router.patch('/boards/:id', (req, res) => {
     const role = requireBoard(db, req.user.id, req.params.id)
     const body = req.body || {}

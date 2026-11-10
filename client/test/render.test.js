@@ -176,7 +176,7 @@ test('con sesión, el bundle lista los tableros del usuario', { skip }, async ()
   assert.match(html, /3 listas · 5 tarjetas/)
   assert.match(html, /2 vencidas/)
   assert.match(html, /src="\/brand\/utrel-mark\.svg"/, 'la barra superior usa el isotipo de la marca')
-  assert.match(html, /app-version[^>]*>v1\.1</, 'la versión de la aplicación se muestra de forma discreta')
+  assert.match(html, /app-version[^>]*>v1\.2</, 'la versión de la aplicación se muestra de forma discreta')
   assert.deepEqual(app.calls, ['GET /api/auth/me', 'GET /api/boards'])
 })
 
@@ -607,6 +607,7 @@ test('el perfil permite cambiar la foto y se refleja en la barra', { skip }, asy
       body: { user: { id: 'u1', username: 'ana', name: 'Ana', email: 'ana@example.com' } },
     },
     'GET /api/boards': { status: 200, body: { boards: [] } },
+    'GET /api/auth/tokens': { status: 200, body: { tokens: [] } },
     'PATCH /api/auth/me': {
       status: 200,
       body: {
@@ -2169,6 +2170,94 @@ test('un enlace de YouTube muestra el icono, la miniatura y su vista previa', { 
   })
 })
 
+test('las tarjetas muestran el icono de enlace y el progreso total de los checklists', { skip }, async () => {
+  const card = {
+    ...BOARD.lists[0].cards[0],
+    title: 'Artículo de ejemplo',
+    link: {
+      url: 'https://ejemplo.com/articulo',
+      title: 'Artículo de ejemplo',
+      image: null,
+      icon: null,
+      site: 'Ejemplo',
+    },
+    checklist: { checklists: 1, total: 4, done: 2 },
+  }
+  const app = await mount(
+    {
+      'GET /api/auth/me': {
+        status: 200,
+        body: { user: { id: 'u1', username: 'ana', name: 'Ana', email: 'ana@example.com' } },
+      },
+      'GET /api/boards/b1': { status: 200, body: boardWithCards([card]) },
+    },
+    '/b/b1'
+  )
+
+  await app.waitFor(/Artículo de ejemplo/)
+  const node = app.window.document.querySelector('[data-card-id="c1"]')
+  assert.ok(node.querySelector('.link-badge'), 'la tarjeta muestra el icono de enlace')
+  assert.ok(!node.querySelector('.youtube-badge'), 'un enlace normal no usa el icono de YouTube')
+
+  const progress = node.querySelector('.card-progress')
+  assert.ok(progress, 'la tarjeta con checklists muestra la barra de progreso')
+  assert.equal(progress.getAttribute('role'), 'progressbar')
+  assert.equal(progress.getAttribute('aria-valuenow'), '2')
+  assert.equal(progress.getAttribute('aria-valuemax'), '4')
+  assert.equal(progress.getAttribute('aria-valuetext'), '50% completado')
+  assert.match(progress.querySelector('.card-progress-fill').getAttribute('style'), /width: 50%/)
+  assert.equal(progress.querySelector('.card-progress-percent').textContent, '50%')
+})
+
+test('copiar un tablero pregunta si incluir las tarjetas y permite cancelar', { skip }, async () => {
+  const copied = {
+    ...BOARD,
+    board: { ...BOARD.board, id: 'b2', title: 'Copia de Proyectos' },
+  }
+  const app = await mount(
+    {
+      'GET /api/auth/me': {
+        status: 200,
+        body: { user: { id: 'u1', username: 'ana', name: 'Ana', email: 'ana@example.com' } },
+      },
+      'GET /api/boards/b1': { status: 200, body: BOARD },
+      'POST /api/boards/b1/copy': { status: 201, body: copied },
+      'GET /api/boards/b2': { status: 200, body: copied },
+    },
+    '/b/b1'
+  )
+
+  await app.waitFor(/Diseñar portada/)
+  const doc = app.window.document
+
+  clickByText(app.window, 'Menú')
+  await app.waitFor(/Copiar tablero…/)
+  clickByText(app.window, 'Copiar tablero…')
+  await app.waitFor(/copy-board-dialog/)
+  const dialog = doc.querySelector('.copy-board-dialog')
+  assert.match(dialog.textContent, /Se copiarán las etiquetas y las columnas/)
+  assert.ok([...dialog.querySelectorAll('button')].some((button) => button.textContent.trim() === 'Cancelar'))
+
+  // Cancelar cierra sin crear nada.
+  clickByText(app.window, 'Cancelar')
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.ok(!doc.querySelector('.copy-board-dialog'), 'Cancelar cierra el diálogo')
+  assert.ok(!app.calls.includes('POST /api/boards/b1/copy'))
+
+  // Al copiar se puede dejar fuera el contenido de las tarjetas.
+  clickByText(app.window, 'Menú')
+  await app.waitFor(/Copiar tablero…/)
+  clickByText(app.window, 'Copiar tablero…')
+  await app.waitFor(/copy-board-dialog/)
+  const checkbox = doc.querySelector('.copy-board-dialog input[type="checkbox"]')
+  assert.equal(checkbox.checked, true, 'las tarjetas se incluyen por defecto')
+  checkbox.click()
+  clickByText(app.window, 'Copiar tablero')
+  await waitForCall(app, 'POST /api/boards/b1/copy')
+  assert.deepEqual(app.payloads.at(-1).body, { includeCards: false })
+  await app.waitFor(/Copia de Proyectos/)
+})
+
 test('archivar todas las tarjetas de una lista pide confirmación', { skip }, async () => {
   const emptyBoard = {
     ...BOARD,
@@ -2208,4 +2297,123 @@ test('archivar todas las tarjetas de una lista pide confirmación', { skip }, as
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
   assert.ok(!doc.querySelector('[data-card-id="c1"]'), 'la tarjeta sale del tablero')
+})
+
+test('copiar una tarjeta está en el menú contextual y en las acciones del detalle', { skip }, async () => {
+  const detail = {
+    ...BOARD.lists[0].cards[0],
+    listTitle: 'Por hacer',
+    checklists: [],
+    comments: [],
+    activity: [],
+    coverPosition: 'center',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+
+  const app = await mount(
+    {
+      'GET /api/auth/me': {
+        status: 200,
+        body: { user: { id: 'u1', username: 'ana', name: 'Ana', email: 'ana@example.com' } },
+      },
+      'GET /api/boards/b1': { status: 200, body: BOARD },
+      'GET /api/cards/c1': { status: 200, body: { card: detail } },
+      'POST /api/cards/c1/copy': { status: 201, body: { card: detail, board: 'b1' } },
+    },
+    '/b/b1'
+  )
+
+  await app.waitFor(/Diseñar portada/)
+  const doc = app.window.document
+
+  // Menú contextual de la tarjeta.
+  assert.ok(rightClick(app.window, doc.querySelector('[data-card-id="c1"]')).defaultPrevented)
+  const menu = await app.waitFor(/Copiar tarjeta/)
+  assert.match(menu, /Copiar tarjeta/)
+  clickMenuItem(app.window, 'Copiar tarjeta')
+  await waitForCall(app, 'POST /api/cards/c1/copy')
+
+  // Acciones del detalle: copia y vuelve al tablero.
+  doc.querySelector('[data-card-id="c1"]').click()
+  const actions = await app.waitFor(/Acciones/)
+  assert.match(actions, /Copiar tarjeta/)
+  const copyButton = [...doc.querySelectorAll('.card-modal-side button')].find((button) =>
+    button.textContent.includes('Copiar tarjeta')
+  )
+  assert.ok(copyButton, 'falta el botón de copiar en las acciones')
+  copyButton.click()
+  await waitForCallCount(app, 'POST /api/cards/c1/copy', 2)
+
+  const deadline = Date.now() + 2000
+  while (Date.now() < deadline && doc.querySelector('.card-modal')) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  assert.ok(!doc.querySelector('.card-modal'), 'al copiar desde el detalle se vuelve al tablero')
+})
+
+test('el perfil genera tokens de API y enlaza al repositorio oficial', { skip }, async () => {
+  let tokens = []
+  const app = await mount({
+    'GET /api/auth/me': {
+      status: 200,
+      body: { user: { id: 'u1', username: 'ana', name: 'Ana', email: 'ana@example.com' } },
+    },
+    'GET /api/boards': { status: 200, body: { boards: [] } },
+    'GET /api/auth/tokens': { status: 200, body: () => ({ tokens }) },
+    'POST /api/auth/tokens': {
+      status: 201,
+      body: () => {
+        const entry = {
+          id: 't1',
+          name: 'n8n',
+          prefix: 'utrel_abc12345',
+          createdAt: new Date().toISOString(),
+          lastUsedAt: null,
+        }
+        tokens = [entry]
+        return { token: 'utrel_token_secreto_123', ...entry, tokens }
+      },
+    },
+    'DELETE /api/auth/tokens/t1': {
+      status: 200,
+      body: () => {
+        tokens = []
+        return { tokens }
+      },
+    },
+  })
+
+  await app.waitFor(/Mis tableros/)
+  const doc = app.window.document
+
+  const repo = doc.querySelector('.app-github')
+  assert.ok(repo, 'falta el icono de GitHub')
+  assert.equal(repo.getAttribute('href'), 'https://github.com/contratop/utrel')
+
+  doc.querySelector('.profile-trigger').click()
+  await app.waitFor(/Acceso API y MCP/)
+
+  const nameInput = doc.querySelector('.profile-modal input[placeholder^="Nombre del token"]')
+  assert.ok(nameInput, 'falta el nombre del token')
+  setInputValue(app.window, nameInput, 'n8n')
+  nameInput.closest('form').dispatchEvent(
+    new app.window.Event('submit', { bubbles: true, cancelable: true })
+  )
+
+  await waitForCall(app, 'POST /api/auth/tokens')
+  const body = app.payloads.find((entry) => entry.pathname === '/api/auth/tokens')
+  assert.equal(body.body.name, 'n8n')
+
+  const html = await app.waitFor(/utrel_token_secreto_123/)
+  assert.match(html, /Authorization: Bearer/)
+  assert.match(html, /\/api\/mcp/)
+
+  const revoke = [...doc.querySelectorAll('.token-list button')].find((button) =>
+    button.textContent.includes('Revocar')
+  )
+  assert.ok(revoke, 'falta el botón para revocar el token')
+  revoke.click()
+  await waitForCall(app, 'DELETE /api/auth/tokens/t1')
+  await app.waitFor(/Todavía no tienes tokens/)
 })

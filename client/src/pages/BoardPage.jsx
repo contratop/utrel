@@ -16,6 +16,7 @@ import ColorSelect from '../components/ColorSelect.jsx'
 import MembersDialog from '../components/MembersDialog.jsx'
 import ArchivedDialog from '../components/ArchivedDialog.jsx'
 import BoardBackgroundDialog from '../components/BoardBackgroundDialog.jsx'
+import CopyBoardDialog from '../components/CopyBoardDialog.jsx'
 import ProfileDialog from '../components/ProfileDialog.jsx'
 import { boardArtwork } from '../lib/backgrounds.js'
 import { LABEL_COLOR_HEX } from '../lib/constants.js'
@@ -55,6 +56,7 @@ export default function BoardPage() {
   const [filters, setFilters] = useState(EMPTY_FILTERS)
   const [dialog, setDialog] = useState(null)
   const [confirmState, setConfirmState] = useState(null)
+  const [copyBoardOpen, setCopyBoardOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [listMenu, setListMenu] = useState(null)
   const [limitDraft, setLimitDraft] = useState('')
@@ -267,6 +269,11 @@ export default function BoardPage() {
     { label: 'Fondo del tablero…', icon: <Icon name="image" />, onSelect: () => setDialog('background') },
     { label: 'Etiquetas…', icon: <Icon name="tag" />, onSelect: () => setDialog('labels') },
     { label: 'Miembros…', icon: <Icon name="users" />, onSelect: () => setDialog('members') },
+    {
+      label: 'Copiar tablero…',
+      icon: <Icon name="copy" />,
+      onSelect: () => setCopyBoardOpen(true),
+    },
     { separator: true },
     {
       label: `Elementos archivados (${data.archivedCards.length + data.archivedLists.length})`,
@@ -364,6 +371,11 @@ export default function BoardPage() {
       label: 'Abrir tarjeta',
       icon: <Icon name="arrow-up-right" />,
       onSelect: () => navigate(`/b/${boardId}/c/${card.id}`),
+    },
+    {
+      label: 'Copiar tarjeta',
+      icon: <Icon name="copy" />,
+      onSelect: () => guarded(() => api.post(`/cards/${card.id}/copy`)),
     },
     {
       label: 'Archivar tarjeta',
@@ -1011,6 +1023,17 @@ export default function BoardPage() {
                   className="btn ghost small"
                   type="button"
                   onClick={() => {
+                    setCopyBoardOpen(true)
+                    setMenuOpen(false)
+                  }}
+                >
+                  <Icon name="copy" size={14} />
+                  Copiar tablero…
+                </button>
+                <button
+                  className="btn ghost small"
+                  type="button"
+                  onClick={() => {
                     setDialog('background')
                     setMenuOpen(false)
                   }}
@@ -1541,6 +1564,18 @@ export default function BoardPage() {
         >
           {touchGhost.type === 'list' ? `Lista: ${touchGhost.title}` : touchGhost.title}
         </div>
+      )}
+
+      {copyBoardOpen && (
+        <CopyBoardDialog
+          board={data}
+          onCancel={() => setCopyBoardOpen(false)}
+          onCopy={async (includeCards) => {
+            const created = await api.post(`/boards/${boardId}/copy`, { includeCards })
+            setCopyBoardOpen(false)
+            navigate(`/b/${created.board.id}`)
+          }}
+        />
       )}
 
       {dialog === 'profile' && (

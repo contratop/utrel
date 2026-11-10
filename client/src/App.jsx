@@ -4,6 +4,7 @@ import Login from './pages/Login.jsx'
 import Boards from './pages/Boards.jsx'
 import BoardPage from './pages/BoardPage.jsx'
 import Admin from './pages/Admin.jsx'
+import Icon from './components/Icon.jsx'
 import { APP_VERSION } from './lib/constants.js'
 
 function RequireAuth({ children }) {
@@ -62,6 +63,16 @@ export default function App() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <a
+          className="app-github"
+          href="https://github.com/contratop/utrel"
+          target="_blank"
+          rel="noreferrer"
+          title="Repositorio oficial de Utrel en GitHub"
+          aria-label="Repositorio oficial de Utrel en GitHub"
+        >
+          <Icon name="github" size={16} />
+        </a>
         <span className="app-version" title="Versión de Utrel">
           {`v${APP_VERSION}`}
         </span>

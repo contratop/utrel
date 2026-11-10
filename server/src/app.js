@@ -8,6 +8,7 @@ import { boardRoutes } from './routes/boards.js'
 import { cardRoutes } from './routes/cards.js'
 import { liveRoutes } from './routes/live.js'
 import { uploadRoutes } from './routes/uploads.js'
+import { mcpRoutes } from './mcp.js'
 import { HttpError } from './util.js'
 
 export function createApp({
@@ -49,6 +50,7 @@ export function createApp({
   api.use('/admin', requireAuth, requireAdmin, adminRoutes(db))
   api.use('/', requireAuth, uploadRoutes(uploadsDir))
   api.use('/', requireAuth, liveRoutes(db, live))
+  api.use('/mcp', requireAuth, mcpRoutes(db, { previewLink }))
   api.use('/', requireAuth, boardRoutes(db))
   api.use('/', requireAuth, cardRoutes(db, { previewLink }))
   app.use('/api', api)

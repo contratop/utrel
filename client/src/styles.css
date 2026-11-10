@@ -665,6 +665,28 @@ select:focus {
   flex: 0 0 auto;
 }
 
+/* Enlace al repositorio oficial, junto a la versión. */
+.app-github {
+  position: fixed;
+  right: 40px;
+  bottom: 2px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.app-github:hover,
+.app-github:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 /* Versión de la aplicación, discreta en la esquina inferior derecha. */
 .app-version {
   position: fixed;
@@ -1398,6 +1420,45 @@ select:focus {
   color: #eafff4;
 }
 
+.link-badge {
+  color: #8fb8ff;
+}
+
+/* Progreso global de todos los checklists de la tarjeta, a todo el ancho. */
+.card-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.card-progress-track {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.card-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.card-progress-percent {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.card-progress.complete .card-progress-fill {
+  background: #2fa36b;
+}
+
 .card-members {
   margin-left: auto;
 }
@@ -1506,6 +1567,88 @@ select:focus {
   justify-content: center;
   width: 100%;
   margin-top: 4px;
+}
+
+.copy-board-dialog {
+  gap: 14px;
+}
+
+.copy-board-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+}
+
+.copy-board-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.copy-board-head p {
+  margin: 4px 0 0;
+  line-height: 1.45;
+}
+
+.copy-board-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(76, 141, 255, 0.16);
+  color: #9dc0ff;
+}
+
+.copy-board-includes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.copy-board-includes li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.copy-board-includes .icon {
+  flex: 0 0 auto;
+  color: #6fd39f;
+}
+
+.copy-board-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.copy-board-choice input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+}
+
+.copy-board-choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.copy-board-choice strong {
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .modal-head {
@@ -2724,6 +2867,58 @@ select:focus {
 
 .profile-preview strong {
   font-size: 1.05rem;
+}
+
+/* --------------------------------------------------- tokens de API/MCP */
+
+.token-section .api-endpoint {
+  display: block;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.token-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.token-reveal p {
+  margin: 0;
+}
+
+.token-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.token-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.token-list p {
+  margin: 2px 0 0;
 }
 
 .avatar {

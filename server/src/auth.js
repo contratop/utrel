@@ -4,6 +4,8 @@ import { HttpError } from './util.js'
 const SESSION_COOKIE = 'utrel_session'
 const SESSION_DAYS = 30
 const KEY_LEN = 64
+const API_TOKEN_BYTES = 32
+const API_TOKEN_PREFIX = 'utrel_'
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -68,6 +70,46 @@ export function destroySession(db, req, res) {
   res.setHeader('Set-Cookie', cookieValue('', 0))
 }
 
+const hashApiToken = (token) => crypto.createHash('sha256').update(token).digest('hex')
+
+/** Datos públicos de un token; el valor original no se guarda en la base. */
+function tokenEntry(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    prefix: row.prefix,
+    createdAt: row.created_at,
+    lastUsedAt: row.last_used_at || null,
+  }
+}
+
+/** Crea un token de API y devuelve el valor en claro (solo se muestra una vez). */
+export function issueApiToken(db, userId, name) {
+  const token = `${API_TOKEN_PREFIX}${crypto.randomBytes(API_TOKEN_BYTES).toString('base64url')}`
+  const id = crypto.randomUUID()
+  const createdAt = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO api_tokens (id, user_id, name, token_hash, prefix, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(id, userId, name, hashApiToken(token), token.slice(0, API_TOKEN_PREFIX.length + 8), createdAt)
+  return { token, entry: tokenEntry({ id, name, prefix: token.slice(0, 14), created_at: createdAt }) }
+}
+
+export function listApiTokens(db, userId) {
+  return db
+    .prepare(
+      `SELECT id, name, prefix, created_at, last_used_at FROM api_tokens
+        WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`
+    )
+    .all(userId)
+    .map(tokenEntry)
+}
+
+export function revokeApiToken(db, userId, tokenId) {
+  const result = db.prepare('DELETE FROM api_tokens WHERE id = ? AND user_id = ?').run(tokenId, userId)
+  if (result.changes === 0) throw new HttpError(404, 'Token no encontrado')
+}
+
 /** Datos públicos de un usuario (los que viajan al cliente). */
 export const publicUser = (row) => ({
   id: row.id,
@@ -78,19 +120,45 @@ export const publicUser = (row) => ({
   isAdmin: !!row.is_admin,
 })
 
-/** Middleware: adjunta req.user si hay una sesión válida. */
+/** Middleware: adjunta req.user desde la cookie de sesión o un token Bearer. */
 export function sessionMiddleware(db) {
   const find = db.prepare(
     `SELECT u.id, u.email, u.username, u.name, u.avatar, u.is_admin
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token = ? AND s.expires_at > ? AND u.disabled = 0`
   )
+  const findToken = db.prepare(
+    `SELECT t.id AS token_id, t.last_used_at,
+            u.id, u.email, u.username, u.name, u.avatar, u.is_admin
+       FROM api_tokens t JOIN users u ON u.id = t.user_id
+      WHERE t.token_hash = ? AND u.disabled = 0`
+  )
+  const touchToken = db.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?')
+
   return (req, _res, next) => {
-    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE]
-    if (token) {
-      const user = find.get(token, new Date().toISOString())
+    const sessionToken = parseCookies(req.headers.cookie)[SESSION_COOKIE]
+    if (sessionToken) {
+      const user = find.get(sessionToken, new Date().toISOString())
       if (user) req.user = publicUser(user)
     }
+
+    if (!req.user) {
+      const match = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')
+      if (match) {
+        const row = findToken.get(hashApiToken(match[1].trim()))
+        if (row) {
+          req.user = publicUser(row)
+          req.apiTokenId = row.token_id
+          const now = Date.now()
+          // El último uso se actualiza como mucho una vez por minuto para no
+          // escribir en SQLite en cada petición de la API.
+          if (!row.last_used_at || now - Date.parse(row.last_used_at) > 60_000) {
+            touchToken.run(new Date(now).toISOString(), row.token_id)
+          }
+        }
+      }
+    }
+
     next()
   }
 }

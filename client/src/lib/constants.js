@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.1'
+export const APP_VERSION = '1.2'
 
 export const BOARD_BACKGROUNDS = ['aurora', 'ocean', 'sunset', 'forest', 'berry', 'graphite']
 

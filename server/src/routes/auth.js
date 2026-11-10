@@ -3,8 +3,11 @@ import {
   createSession,
   destroySession,
   hashPassword,
+  issueApiToken,
+  listApiTokens,
   publicUser,
   requireAuth,
+  revokeApiToken,
   validateCredentials,
   verifyPassword,
 } from '../auth.js'
@@ -114,6 +117,29 @@ export function authRoutes(db) {
     }
 
     res.json({ user: publicUser(findById.get(req.user.id)) })
+  })
+
+  // ------------------------------------------------------- tokens de API/MCP
+
+  router.get('/tokens', requireAuth, (req, res) => {
+    res.json({ tokens: listApiTokens(db, req.user.id) })
+  })
+
+  router.post('/tokens', requireAuth, (req, res) => {
+    const total = db
+      .prepare('SELECT COUNT(*) AS total FROM api_tokens WHERE user_id = ?')
+      .get(req.user.id).total
+    if (total >= 10) {
+      throw new HttpError(400, 'Has alcanzado el máximo de 10 tokens. Revoca alguno antes de crear otro.')
+    }
+    const name = str((req.body || {}).name, 'nombre', { max: 60 }) || 'Token de API'
+    const created = issueApiToken(db, req.user.id, name)
+    res.status(201).json({ token: created.token, ...created.entry, tokens: listApiTokens(db, req.user.id) })
+  })
+
+  router.delete('/tokens/:id', requireAuth, (req, res) => {
+    revokeApiToken(db, req.user.id, req.params.id)
+    res.json({ tokens: listApiTokens(db, req.user.id) })
   })
 
   /** Búsqueda de usuarios para añadirlos a un tablero. */

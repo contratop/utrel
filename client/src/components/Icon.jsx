@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronUp,
   Code,
+  Copy,
   Eraser,
   Eye,
   Flag,
@@ -26,6 +27,7 @@ import {
   Image,
   Italic,
   ImageOff,
+  KeyRound,
   LayoutGrid,
   Link,
   List,
@@ -78,6 +80,30 @@ function YoutubeGlyph({ size = 24, strokeWidth = 2, ...props }) {
 }
 
 /**
+ * Marca de GitHub. Lucide ya no incluye logotipos de marcas, así que se
+ * dibuja el mismo contorno para enlazar al repositorio oficial.
+ */
+function GithubGlyph({ size = 24, strokeWidth = 2, ...props }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.1-.3 6.4-1.5 6.4-7A5.4 5.4 0 0 0 19 3.8 5 5 0 0 0 18.9.4S17.7 0 15 1.6a13.4 13.4 0 0 0-7 0C5.3 0 4.1.4 4.1.4A5 5 0 0 0 4 3.8a5.4 5.4 0 0 0-1.4 3.7c0 5.5 3.3 6.7 6.4 7A4.8 4.8 0 0 0 8 18v4" />
+      <path d="M9 18c-4.51 2-5-2-7-2" />
+    </svg>
+  )
+}
+
+/**
  * Iconos de la interfaz. Todos vienen de Lucide (biblioteca SVG de trazo
  * abierto, https://lucide.dev) con el mismo grosor de línea, para que la app
  * se vea coherente sin depender de emojis del sistema.
@@ -100,7 +126,10 @@ const ICONS = {
   'chevron-right': ChevronRight,
   'chevron-up': ChevronUp,
   code: Code,
+  copy: Copy,
   eraser: Eraser,
+  github: GithubGlyph,
+  key: KeyRound,
   eye: Eye,
   flag: Flag,
   'folder-kanban': FolderKanban,

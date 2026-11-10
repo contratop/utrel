@@ -439,6 +439,22 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
     }
   }
 
+  /** Copia la tarjeta en su lista y vuelve al tablero para verla. */
+  async function copyCard() {
+    if (!card) return
+    setBusy(true)
+    try {
+      await api.post(`/cards/${card.id}/copy`)
+      onBoardChange?.()
+      setError('')
+      onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function uploadCover(event) {
     const file = event.target.files && event.target.files[0]
     event.target.value = ''
@@ -1357,6 +1373,10 @@ export default function CardDetail({ cardId, board, currentUser, onClose, onBoar
                 Acciones
               </span>
               <div className="stack">
+                <button className="btn small" type="button" disabled={busy} onClick={copyCard}>
+                  <Icon name="copy" size={14} />
+                  Copiar tarjeta
+                </button>
                 <button
                   className="btn small"
                   type="button"

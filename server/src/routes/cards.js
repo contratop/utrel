@@ -273,6 +273,86 @@ export function cardRoutes(db, { previewLink = fetchLinkPreview } = {}) {
     res.json({ card: cardPayload(db, req.params.id) })
   })
 
+  // Copia una tarjeta en su misma lista con todas sus propiedades: campos,
+  // etiquetas, miembros y checklists (los comentarios no se duplican).
+  router.post('/cards/:id/copy', (req, res) => {
+    const card = getCard(req.params.id)
+    requireBoard(db, req.user.id, card.board_id)
+    const id = uid()
+    const stamp = iso()
+    const position = maxPosition(
+      db,
+      'SELECT MAX(position) AS max_position FROM cards WHERE list_id = ?',
+      card.list_id
+    )
+
+    db.transaction(() => {
+      db.prepare(
+        `INSERT INTO cards (
+           id, board_id, list_id, title, description, due_date, due_complete, priority,
+           cover_color, cover_image, cover_position,
+           link, link_title, link_image, link_icon, link_site,
+           position, archived, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      ).run(
+        id,
+        card.board_id,
+        card.list_id,
+        card.title,
+        card.description,
+        card.due_date,
+        card.due_complete,
+        card.priority,
+        card.cover_color,
+        card.cover_image,
+        card.cover_position,
+        card.link,
+        card.link_title,
+        card.link_image,
+        card.link_icon,
+        card.link_site,
+        position,
+        stamp,
+        stamp
+      )
+
+      db.prepare(
+        'INSERT INTO card_labels (card_id, label_id) SELECT ?, label_id FROM card_labels WHERE card_id = ?'
+      ).run(id, card.id)
+      db.prepare(
+        'INSERT INTO card_members (card_id, user_id) SELECT ?, user_id FROM card_members WHERE card_id = ?'
+      ).run(id, card.id)
+
+      const checklists = db.prepare('SELECT * FROM checklists WHERE card_id = ?').all(card.id)
+      const insertChecklist = db.prepare(
+        'INSERT INTO checklists (id, card_id, title, position) VALUES (?, ?, ?, ?)'
+      )
+      const insertItem = db.prepare(
+        'INSERT INTO checklist_items (id, checklist_id, text, done, position, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+      )
+      for (const checklist of checklists) {
+        const checklistId = uid()
+        insertChecklist.run(checklistId, id, checklist.title, checklist.position)
+        const items = db
+          .prepare('SELECT * FROM checklist_items WHERE checklist_id = ?')
+          .all(checklist.id)
+        for (const item of items) {
+          insertItem.run(uid(), checklistId, item.text, item.done, item.position, stamp)
+        }
+      }
+    })()
+
+    const list = db.prepare('SELECT title FROM lists WHERE id = ?').get(card.list_id)
+    logActivity(db, {
+      boardId: card.board_id,
+      userId: req.user.id,
+      kind: 'board',
+      message: `copió la tarjeta «${card.title}» en «${list ? list.title : 'la lista'}»`,
+    })
+
+    res.status(201).json({ card: cardPayload(db, id), board: card.board_id })
+  })
+
   // Archiva de una vez todas las tarjetas de una lista.
   router.post('/lists/:id/cards/archive', (req, res) => {
     const boardId = boardIdOfList(db, req.params.id)
